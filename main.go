@@ -3,19 +3,16 @@ package main
 
 import (
     "context"
-    "fmt"
     "log"
     "net/http"
     "os"
-    "time"
 
     "github.com/gorilla/mux"
     "github.com/joho/godotenv"
-    "go.mongodb.org/mongo-driver/bson"
+    "github.com/jonahbi/reading-tracker/backend/handlers"
     "go.mongodb.org/mongo-driver/mongo"
     "go.mongodb.org/mongo-driver/mongo/options"
 )
-
 // the logic here is that,
 
 // first we load the environment variables from the .env file using the godotenv.Load() function.
@@ -43,7 +40,6 @@ import (
 // Aand then we will log a message saying that the server is starting on the specificed port 
 
 // then finally we will start the server using http.ListenAndServe(":"+port,router)
-
 func main() {
     if err := godotenv.Load(); err != nil {
         log.Fatalf("Error loading .env file: %v", err)
@@ -62,30 +58,14 @@ func main() {
     log.Println("Connected to MongoDB!")
 
     db := client.Database(os.Getenv("DB_NAME"))
-    users := db.Collection("users")
-    _, err = users.InsertOne(context.Background(), bson.M{
-        "email":             "test@example1.com",
-        "name":             "Test User",
-        "role":             "student",
-        "student_id":       "12345",
-        "insa_batch":       "Batch 2023",
-        "dorm_number":      "Dorm 101",
-        "educational_status": "2nd year student at ASTU",
-        "verified":         false,
-        "books_read":       0,
-        "rank_score":       0,
-        "class_tag":        "beginner",
-        "created_at":       time.Now(),
-    })
-    if err != nil {
-        log.Fatalf("Failed to insert sample user: %v", err)
-    }
-    log.Println("Inserted sample user!")
+    authHandler := &handlers.AuthHandler{DB: db}
 
     router := mux.NewRouter()
     router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-        fmt.Fprintf(w, "Reading Tracker Backend is running!")
+        w.Write([]byte("Reading Tracker Backend is running!"))
     })
+    router.HandleFunc("/register", authHandler.Register).Methods("POST")
+    router.HandleFunc("/login", authHandler.Login).Methods("POST")
 
     port := os.Getenv("PORT")
     log.Printf("Server starting on :%s...", port)

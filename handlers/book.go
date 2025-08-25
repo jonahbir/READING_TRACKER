@@ -18,6 +18,166 @@ type BookHandler struct {
     DB *mongo.Database
 }
 
+func (h *BookHandler) AddBook(w http.ResponseWriter, r *http.Request) {
+    // Verify JWT
+    tokenString := r.Header.Get("Authorization")
+    if tokenString == "" {
+        http.Error(w, "Missing token", http.StatusUnauthorized)
+        return
+    }
+    if len(tokenString) > 7 && tokenString[:7] == "Bearer " {
+        tokenString = tokenString[7:]
+    }
+
+    token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+        return []byte(os.Getenv("JWT_SECRET")), nil
+    })
+    if err != nil || !token.Valid {
+        http.Error(w, "Invalid token", http.StatusUnauthorized)
+        return
+    }
+    claims, ok := token.Claims.(jwt.MapClaims)
+    if !ok || claims["role"] != "admin" {
+        http.Error(w, "Admin access required", http.StatusForbidden)
+        return
+    }
+
+    // Get admin_id from JWT
+    adminID, err := primitive.ObjectIDFromHex(claims["user_id"].(string))
+    if err != nil {
+        http.Error(w, "Invalid admin ID", http.StatusBadRequest)
+        return
+    }
+
+    // Check admin exists
+    users := h.DB.Collection("users")
+    var admin models.User
+    err = users.FindOne(context.Background(), bson.M{"_id": adminID, "role": "admin"}).Decode(&admin)
+    if err != nil {
+        http.Error(w, "Admin not found", http.StatusForbidden)
+        return
+    }
+
+    // Parse request body
+    var input struct {
+        Title           string `json:"title"`
+        Author          string `json:"author"`
+        ISBN            string `json:"isbn"`
+        Type            string `json:"type"`
+        PhysicalLocation string `json:"physical_location"`
+        SoftcopyURL     string `json:"softcopy_url"`
+    }
+    if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+        http.Error(w, "Invalid input", http.StatusBadRequest)
+        return
+    }
+
+    // Validate input
+    if input.Title == "" || input.Author == "" || input.ISBN == "" || (input.Type != "hardcopy" && input.Type != "softcopy") {
+        http.Error(w, "Missing or invalid fields", http.StatusBadRequest)
+        return
+    }
+    if input.Type == "hardcopy" && input.PhysicalLocation == "" {
+        http.Error(w, "Physical location required for hardcopy", http.StatusBadRequest)
+        return
+    }
+    if input.Type == "softcopy" && input.SoftcopyURL == "" {
+        http.Error(w, "Softcopy URL required for softcopy", http.StatusBadRequest)
+        return
+    }
+
+    // Check if ISBN is unique
+    books := h.DB.Collection("books")
+    count, err := books.CountDocuments(context.Background(), bson.M{"isbn": input.ISBN})
+    if err != nil {
+        http.Error(w, "Failed to check ISBN", http.StatusInternalServerError)
+        return
+    }
+    if count > 0 {
+        http.Error(w, "ISBN already exists", http.StatusConflict)
+        return
+    }
+
+    // Insert book
+    _, err = books.InsertOne(context.Background(), models.Book{
+        Title:           input.Title,
+        Author:          input.Author,
+        ISBN:            input.ISBN,
+        Type:            input.Type,
+        PhysicalLocation: input.PhysicalLocation,
+        SoftcopyURL:     input.SoftcopyURL,
+        Available:       true,
+        AddedBy:         adminID,
+        CreatedAt:       time.Now(),
+    })
+    if err != nil {
+        http.Error(w, "Failed to add book", http.StatusInternalServerError)
+        return
+    }
+
+    w.WriteHeader(http.StatusCreated)
+    json.NewEncoder(w).Encode(map[string]string{"message": "Book added successfully"})
+}
+
+func (h *BookHandler) ListBooks(w http.ResponseWriter, r *http.Request) {
+    // Verify JWT
+    tokenString := r.Header.Get("Authorization")
+    if tokenString == "" {
+        http.Error(w, "Missing token", http.StatusUnauthorized)
+        return
+    }
+    if len(tokenString) > 7 && tokenString[:7] == "Bearer " {
+        tokenString = tokenString[7:]
+    }
+
+    token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+        return []byte(os.Getenv("JWT_SECRET")), nil
+    })
+    if err != nil || !token.Valid {
+        http.Error(w, "Invalid token", http.StatusUnauthorized)
+        return
+    }
+    claims, ok := token.Claims.(jwt.MapClaims)
+    if !ok || claims["role"] != "student" {
+        http.Error(w, "Student access required", http.StatusForbidden)
+        return
+    }
+
+    // Get user_id from JWT
+    userID, err := primitive.ObjectIDFromHex(claims["user_id"].(string))
+    if err != nil {
+        http.Error(w, "Invalid user ID", http.StatusBadRequest)
+        return
+    }
+
+    // Check user exists
+    users := h.DB.Collection("users")
+    var user models.User
+    err = users.FindOne(context.Background(), bson.M{"_id": userID, "verified": true}).Decode(&user)
+    if err != nil {
+        http.Error(w, "User not found or not verified", http.StatusForbidden)
+        return
+    }
+
+    // Query available books
+    books := h.DB.Collection("books")
+    cursor, err := books.Find(context.Background(), bson.M{"available": true})
+    if err != nil {
+        http.Error(w, "Failed to fetch books", http.StatusInternalServerError)
+        return
+    }
+    defer cursor.Close(context.Background())
+
+    var availableBooks []models.Book
+    if err := cursor.All(context.Background(), &availableBooks); err != nil {
+        http.Error(w, "Failed to decode books", http.StatusInternalServerError)
+        return
+    }
+
+    w.WriteHeader(http.StatusOK)
+    json.NewEncoder(w).Encode(availableBooks)
+}
+
 func (h *BookHandler) BorrowBook(w http.ResponseWriter, r *http.Request) {
     // Verify JWT
     tokenString := r.Header.Get("Authorization")

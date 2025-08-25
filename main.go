@@ -41,6 +41,8 @@ func main() {
     router.HandleFunc("/register", authHandler.Register).Methods("POST")
     router.HandleFunc("/login", authHandler.Login).Methods("POST")
     router.HandleFunc("/approve-user", authHandler.ApproveUser).Methods("POST")
+    router.HandleFunc("/add-book", bookHandler.AddBook).Methods("POST")
+    router.HandleFunc("/books", bookHandler.ListBooks).Methods("GET")
     router.HandleFunc("/borrow-book", bookHandler.BorrowBook).Methods("POST")
     router.HandleFunc("/return-book", bookHandler.ReturnBook).Methods("POST")
 

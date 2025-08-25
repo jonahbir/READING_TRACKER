@@ -45,6 +45,9 @@ func main() {
     router.HandleFunc("/books", bookHandler.ListBooks).Methods("GET")
     router.HandleFunc("/borrow-book", bookHandler.BorrowBook).Methods("POST")
     router.HandleFunc("/return-book", bookHandler.ReturnBook).Methods("POST")
+    router.HandleFunc("/reading-progress", bookHandler.UpdateReadingProgress).Methods("POST")
+    router.HandleFunc("/submit-review", bookHandler.SubmitReview).Methods("POST")
+    router.HandleFunc("/approve-review", bookHandler.ApproveReview).Methods("POST")
 
     port := os.Getenv("PORT")
     log.Printf("Server starting on :%s...", port)

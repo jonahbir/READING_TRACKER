@@ -57,3 +57,28 @@ type BorrowHistory struct {
     ReturnDate time.Time          `bson:"return_date,omitempty"`
     Type       string             `bson:"type"` // "hardcopy" or "softcopy"
 }
+
+type ReadingProgress struct {
+    ID              primitive.ObjectID `bson:"_id,omitempty"`
+    UserID          primitive.ObjectID `bson:"user_id"`
+    BookID          primitive.ObjectID `bson:"book_id"`
+    PagesRead       int                `bson:"pages_read"`
+    TotalPages      int                `bson:"total_pages"`
+    Reflection      string             `bson:"reflection"`
+    StreakDays      int                `bson:"streak_days"`
+    BorrowHistoryID primitive.ObjectID `bson:"borrow_history_id"`
+    Completed       bool               `bson:"completed"`
+    LastUpdated     time.Time          `bson:"last_updated"`
+}
+
+type Review struct {
+    ID            primitive.ObjectID `bson:"_id,omitempty"`
+    BookID        primitive.ObjectID `bson:"book_id"`
+    UserID        primitive.ObjectID `bson:"user_id"`
+    ReviewText    string             `bson:"review_text"`
+    AICheckStatus string             `bson:"ai_check_status"` // "pending", "approved", "rejected"
+    AIScore       float64            `bson:"ai_score"`
+    Posted        bool               `bson:"posted"`
+    Upvotes       int                `bson:"upvotes"`
+    CreatedAt     time.Time          `bson:"created_at"`
+}

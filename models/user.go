@@ -1,6 +1,5 @@
 package models
 
-
 import (
     "time"
 
@@ -27,10 +26,34 @@ type User struct {
 type PendingRegistration struct {
     ID                primitive.ObjectID `bson:"_id,omitempty"`
     Email             string             `bson:"email"`
+    Password          string             `bson:"password"`
     Name              string             `bson:"name"`
     StudentID         string             `bson:"student_id"`
     InsaBatch         string             `bson:"insa_batch"`
     DormNumber        string             `bson:"dorm_number"`
     EducationalStatus string             `bson:"educational_status"`
     SubmittedAt       time.Time          `bson:"submitted_at"`
+}
+
+type Book struct {
+    ID              primitive.ObjectID `bson:"_id,omitempty"`
+    Title           string             `bson:"title"`
+    Author          string             `bson:"author"`
+    ISBN            string             `bson:"isbn"`
+    Type            string             `bson:"type"` // "hardcopy" or "softcopy"
+    PhysicalLocation string            `bson:"physical_location"`
+    SoftcopyURL     string            `bson:"softcopy_url"`
+    Available       bool              `bson:"available"`
+    BorrowedBy      primitive.ObjectID `bson:"borrowed_by,omitempty"`
+    AddedBy         primitive.ObjectID `bson:"added_by,omitempty"`
+    CreatedAt       time.Time          `bson:"created_at"`
+}
+
+type BorrowHistory struct {
+    ID         primitive.ObjectID `bson:"_id,omitempty"`
+    UserID     primitive.ObjectID `bson:"user_id"`
+    BookID     primitive.ObjectID `bson:"book_id"`
+    BorrowDate time.Time          `bson:"borrow_date"`
+    ReturnDate time.Time          `bson:"return_date,omitempty"`
+    Type       string             `bson:"type"` // "hardcopy" or "softcopy"
 }

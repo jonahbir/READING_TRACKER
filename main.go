@@ -1,4 +1,3 @@
-
 package main
 
 import (
@@ -9,37 +8,11 @@ import (
 
     "github.com/gorilla/mux"
     "github.com/joho/godotenv"
-    "github.com/jonahbi/reading-tracker/backend/handlers"
     "go.mongodb.org/mongo-driver/mongo"
     "go.mongodb.org/mongo-driver/mongo/options"
+    "reading-tracker/backend/handlers"
 )
-// the logic here is that,
 
-// first we load the environment variables from the .env file using the godotenv.Load() function.
-// then we check if we really fetched the environnment variables correctly if we didn't then we have to leave the program with error message
-// and if we did then we proceed to connect to the mongodb dababase! 
-// but first we have to fetch the mangodb URI (Uniform resource identifier) from the environement variables using os.Getenv("MONGO_URI")
-// THEN WE try to connect to the mongodb database using mongo.connect(context.Background(),options.client().ApplyURI(MongoURI)
-// we assign this connection on client variable
-// if there is an error while connecting to the db we will log the error and exit the porgram on time
-// then we defer the disconnection of the client to ensure that it will be closed when the main function exits 
-
-// and then we ping the database to check if the connection is successful 
-
-// if the connection is not successful we will lof the error and exit the program 
-// if the connection is successful we will log a message saying that we are connected to the mongodeb database 
-
-
-// after that we set up a router using the gorilla/mux package 
-
-// we use router:=mux.Newrouter() to create a new router instance 
-// after crating the router then we will define a simpe route that handles a Get request to the root path ("/").
-
-
-// we will then fetch the port number from the environment varibale using os.Getenv("PORT")
-// Aand then we will log a message saying that the server is starting on the specificed port 
-
-// then finally we will start the server using http.ListenAndServe(":"+port,router)
 func main() {
     if err := godotenv.Load(); err != nil {
         log.Fatalf("Error loading .env file: %v", err)
@@ -59,6 +32,7 @@ func main() {
 
     db := client.Database(os.Getenv("DB_NAME"))
     authHandler := &handlers.AuthHandler{DB: db}
+    bookHandler := &handlers.BookHandler{DB: db}
 
     router := mux.NewRouter()
     router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -66,6 +40,9 @@ func main() {
     })
     router.HandleFunc("/register", authHandler.Register).Methods("POST")
     router.HandleFunc("/login", authHandler.Login).Methods("POST")
+    router.HandleFunc("/approve-user", authHandler.ApproveUser).Methods("POST")
+    router.HandleFunc("/borrow-book", bookHandler.BorrowBook).Methods("POST")
+    router.HandleFunc("/return-book", bookHandler.ReturnBook).Methods("POST")
 
     port := os.Getenv("PORT")
     log.Printf("Server starting on :%s...", port)

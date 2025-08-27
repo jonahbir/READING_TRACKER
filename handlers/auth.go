@@ -1,27 +1,28 @@
 package handlers
 
 import (
-    "context"                    // Needed for MongoDB operations
-    "encoding/json"              // To encode/decode JSON data
-    "net/http"                   // For HTTP server and responses
-    "os"                         // To read environment variables
-    "time"                       // To work with dates and times
+    "context"                   
+    "encoding/json"             
+    "net/http"                   
+    "os"                         
+    "time"
 
-    "reading-tracker/backend/models" // Import custom data models
-    "go.mongodb.org/mongo-driver/bson" // For MongoDB queries
-    "go.mongodb.org/mongo-driver/mongo" // MongoDB client
-    "golang.org/x/crypto/bcrypt"      // To hash passwords
-    "github.com/golang-jwt/jwt/v5"   // To create and verify JWT tokens
-)
+    "reading-tracker/backend/models"
+    "go.mongodb.org/mongo-driver/bson" 
+    "go.mongodb.org/mongo-driver/mongo" 
+    "golang.org/x/crypto/bcrypt"
+    "github.com/golang-jwt/jwt/v5" )  
 
 // AuthHandler struct holds a reference to the MongoDB database
 type AuthHandler struct {
     DB *mongo.Database
 }
 
+
+
 // Register function handles new user registration
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
-    // Define input structure for registration data
+ 
     var input struct {
         Email             string `json:"email"`
         Password          string `json:"password"`
@@ -39,8 +40,8 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
     }
 
     // Get collections from MongoDB
-    users := h.DB.Collection("users")                        // Existing users
-    pending := h.DB.Collection("pending_registrations")      // Pending approvals
+    users := h.DB.Collection("users")                       
+    pending := h.DB.Collection("pending_registrations")      
 
     // Check if email is already registered
     if count, _ := users.CountDocuments(context.Background(), bson.M{"email": input.Email}); count > 0 {
@@ -64,13 +65,13 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
     // Insert pending registration record into the database
     _, err = pending.InsertOne(context.Background(), models.PendingRegistration{
         Email:             input.Email,
-        Password:          string(hashedPassword), // Store hashed password
+        Password:          string(hashedPassword),
         Name:              input.Name,
         StudentID:         input.StudentID,
         InsaBatch:         input.InsaBatch,
         DormNumber:        input.DormNumber,
         EducationalStatus: input.EducationalStatus,
-        SubmittedAt:       time.Now(),             // Store current time
+        SubmittedAt:       time.Now(),
     })
     if err != nil {
         http.Error(w, "Failed to register", http.StatusInternalServerError)
@@ -81,6 +82,14 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
     w.WriteHeader(http.StatusCreated)
     json.NewEncoder(w).Encode(map[string]string{"message": "Registration pending admin approval"})
 }
+
+
+
+
+
+
+
+
 
 // Login function handles user login
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
@@ -121,9 +130,9 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
     // Create JWT token for authenticated user
     token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-        "user_id": user.ID.Hex(),          // Include user ID in token
-        "role":    user.Role,              // Include user role in token
-        "exp":     time.Now().Add(time.Hour * 24).Unix(), // Expire in 24 hours
+        "user_id": user.ID.Hex(),
+        "role":    user.Role,
+        "exp":     time.Now().Add(time.Hour * 24).Unix(),
     })
 
     // Sign the token with secret from environment variable
@@ -136,6 +145,10 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
     // Send token back to the client
     json.NewEncoder(w).Encode(map[string]string{"token": tokenString})
 }
+
+
+
+
 
 // ApproveUser function handles admin approval of pending registrations
 func (h *AuthHandler) ApproveUser(w http.ResponseWriter, r *http.Request) {
@@ -151,7 +164,7 @@ func (h *AuthHandler) ApproveUser(w http.ResponseWriter, r *http.Request) {
     }
 
     // Parse and verify JWT
-    token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+    token, err := jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
         return []byte(os.Getenv("JWT_SECRET")), nil
     })
     if err != nil || !token.Valid {

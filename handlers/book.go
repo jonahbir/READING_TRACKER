@@ -272,16 +272,24 @@ func (h *BookHandler) BorrowBook(w http.ResponseWriter, r *http.Request) {
 
 	// Check if book exists and is available and is hardcopy
 	books := h.DB.Collection("books")
+	users:=h.DB.Collection("users")
 	
-	var book models.Book
 
+
+
+	var book models.Book
+	var user models.User
 	err = books.FindOne(context.Background(), bson.M{"isbn": input.ISBN, "available": true,"type":"hardcopy"}).Decode(&book)
 	if err != nil {
 		http.Error(w, "no such hardcopy book available", http.StatusNotFound)
 		return
 	}
 
-	
+	err=users.FindOne(context.Background(), bson.M{"user_id":studentID}).Decode(&user)
+	if err!=nil{
+		http.Error(w,"error while trying to parse user",http.StatusInternalServerError)
+		return
+	}
 		_, err = books.UpdateOne(
 			context.Background(),
 			bson.M{"isbn": input.ISBN},
@@ -300,11 +308,29 @@ func (h *BookHandler) BorrowBook(w http.ResponseWriter, r *http.Request) {
 		"isbn":        book.ISBN,
 		"title":       book.Title,
 		"user_id":     studentID,
+		"reader_id":   user.ReaderID,
 		"book_id":     book.ID,
 		"borrow_date": time.Now(),
 	})
 	if err != nil {
 		http.Error(w, "Failed to record borrow", http.StatusInternalServerError)
+		return
+	}
+
+	// record reading
+
+	// ID primitive.ObjectID `bson:"_id,omitempty"`
+	// BookID primitive.ObjectID `bson:"book_id"`
+	// UserID primitive.ObjectID  `bson:"user_id"`
+	// ReaderID string            `bson:"reader_id"`
+	reading:=h.DB.Collection("reading")
+	_,err=reading.InsertOne(context.Background(), bson.M{
+		"book_id":book.ID,
+		"user_id": studentID,
+		"reader_id": user.ReaderID,	
+	})
+	if err!=nil{
+		http.Error(w, "failed to record reading", http.StatusInternalServerError)
 		return
 	}
 
@@ -314,6 +340,12 @@ func (h *BookHandler) BorrowBook(w http.ResponseWriter, r *http.Request) {
 
 
 
+// this hanlder will add softcopy books to the reading list
+
+func (h * BookHandler) AddToReading(w http.ResponseWriter, r *http.Request){
+
+	
+}
 // the admin will apporve if the book is returned or not!
 func (h *BookHandler) ReturnBook(w http.ResponseWriter, r *http.Request) {
 	// Verify JWT
@@ -359,7 +391,7 @@ func (h *BookHandler) ReturnBook(w http.ResponseWriter, r *http.Request) {
 	// Parse request body
 	var input struct {
 		ISBN string `json:"isbn"`
-		User_Id string `json:"user_id"`
+		ReaderID string `json:"reader_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, "Invalid input", http.StatusBadRequest)
@@ -369,9 +401,9 @@ func (h *BookHandler) ReturnBook(w http.ResponseWriter, r *http.Request) {
 	// Find book
 	books := h.DB.Collection("books")
 	var book models.Book
-	err = books.FindOne(context.Background(), bson.M{"isbn": input.ISBN}).Decode(&book)  // here you should add another criteria to check id the book is really borrowed by the user later after adding user_id to your database
+	err = books.FindOne(context.Background(), bson.M{"isbn": input.ISBN}).Decode(&book)  
 	if err != nil {
-		http.Error(w, "Book not found or book not borrowed by this user", http.StatusNotFound)
+		http.Error(w, "Book not found", http.StatusNotFound)
 		return
 	}
 
@@ -381,11 +413,12 @@ func (h *BookHandler) ReturnBook(w http.ResponseWriter, r *http.Request) {
 	var record models.BorrowHistory
 	err = borrowHistory.FindOne(context.Background(), bson.M{
 		"user_id":     book.BorrowedBy,
+		"reader_id":   input.ReaderID,
 		"book_id":     book.ID,
 		"return_date": bson.M{"$exists": false},
 	}).Decode(&record)
 	if err != nil {
-		http.Error(w, "Borrow record not found", http.StatusNotFound)
+		http.Error(w, "Borrow record not found or not borrowed by this user", http.StatusNotFound)
 		return
 	}
 

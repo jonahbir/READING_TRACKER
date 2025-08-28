@@ -58,6 +58,7 @@ type BorrowHistory struct {
 	ISBN       string             `bson:"isbn"`
 	Title      string              `bson:"Title"`
 	UserID     primitive.ObjectID `bson:"user_id"`
+	ReaderID   string              `bson:"reader_id"`
 	BookID     primitive.ObjectID `bson:"book_id"`
 	BorrowDate time.Time          `bson:"borrow_date"`
 	ReturnDate time.Time          `bson:"return_date,omitempty"`
@@ -93,6 +94,7 @@ type Reading struct {
 	ID primitive.ObjectID `bson:"_id,omitempty"`
 	BookID primitive.ObjectID `bson:"book_id"`
 	UserID primitive.ObjectID  `bson:"user_id"`
+	ReaderID string            `bson:"reader_id"`
 
 
 }

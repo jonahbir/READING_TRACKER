@@ -81,17 +81,23 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
      if err:=cursor.All(context.Background(), &userslist); err!=nil{
 		http.Error(w,"error while genarating id", http.StatusInternalServerError)
 	 }
-      targetedItem := userslist[len(userslist)-1]
-	no := targetedItem.ReaderID[6:] // assuming email prefix is 5 chars
-	num, err := strconv.ParseInt(no, 10, 64)
-	if err != nil {
-		http.Error(w, "error while generating id", http.StatusInternalServerError)
-		return
-	}
-	id_num := num + 1
-	reader_id = input.Email[:6] + strconv.FormatInt(id_num, 10)
+	 // think how to generate it if it is the first user!
+	 if len(userslist)==0{
+		reader_id=input.Name[:3]+"0001"
 
 
+	 }else{
+		 targetedItem := userslist[len(userslist)-1]
+		no := targetedItem.ReaderID[6:] // assuming email prefix is 5 chars
+		num, err := strconv.ParseInt(no, 10, 64)
+		if err != nil {
+			http.Error(w, "error while generating id", http.StatusInternalServerError)
+			return
+		}
+		id_num := num + 1
+		reader_id = input.Name[:3] + "000" + strconv.FormatInt(id_num, 10)
+	 }
+     
 
 	// Insert pending registration record into the database
 	_, err = pending.InsertOne(context.Background(), models.PendingRegistration{
@@ -227,6 +233,7 @@ func (h *AuthHandler) ApproveUser(w http.ResponseWriter, r *http.Request) {
 		Email:             pendingUser.Email,
 		Password:          pendingUser.Password,
 		Name:              pendingUser.Name,
+		ReaderID:           pendingUser.ReaderID,
 		Role:              "student",
 		StudentID:         pendingUser.StudentID,
 		InsaBatch:         pendingUser.InsaBatch,

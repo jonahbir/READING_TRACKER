@@ -95,6 +95,7 @@ type Reading struct {
 	BookID primitive.ObjectID `bson:"book_id"`
 	UserID primitive.ObjectID  `bson:"user_id"`
 	ReaderID string            `bson:"reader_id"`
+	StartedReading time.Time     `bson:"started_at"`
 
 
 }

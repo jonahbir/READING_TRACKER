@@ -327,7 +327,8 @@ func (h *BookHandler) BorrowBook(w http.ResponseWriter, r *http.Request) {
 	_,err=reading.InsertOne(context.Background(), bson.M{
 		"book_id":book.ID,
 		"user_id": studentID,
-		"reader_id": user.ReaderID,	
+		"reader_id": user.ReaderID,
+		"started_at" : time.Now(),	
 	})
 	if err!=nil{
 		http.Error(w, "failed to record reading", http.StatusInternalServerError)
@@ -344,8 +345,112 @@ func (h *BookHandler) BorrowBook(w http.ResponseWriter, r *http.Request) {
 
 func (h * BookHandler) AddToReading(w http.ResponseWriter, r *http.Request){
 
-	
+	// only the user can add a book to this collection so we need to verify that the man who logged in is student-
+	// after varifying that he is student then we have to have a struct where we save the input we recieve 
+	// then we need to decode the json we accepted as input 
+	// then we need to verify that the book is available for reading- we will check that in the books collection
+	// then we will add the book to the collection 
+    // then we will send a success message
+
+
+
+	tokenstring:= r.Header.Get("Authorization")
+
+	if tokenstring==""{
+		http.Error(w,"missing token", http.StatusUnauthorized)
+		return
+	}
+	if len(tokenstring)>7 && tokenstring[:7]=="Bearer "{
+		tokenstring=tokenstring[7:]
+
+	}
+token , err:= jwt.Parse(tokenstring, func( token *jwt.Token) (any,error){
+	return []byte(os.Getenv("JWT_SECRET")),nil
+
+})
+
+if err!=nil || !token.Valid{
+	http.Error(w,"invalid token", http.StatusUnauthorized)
+	return
 }
+Claims,ok:=token.Claims.(jwt.MapClaims)
+
+if !ok || Claims["role"]!="student"{
+	http.Error(w, "student access needed",http.StatusUnauthorized)
+	return
+}
+
+userid,err:=primitive.ObjectIDFromHex(Claims["user_id"].(string))
+
+if err!=nil{
+	http.Error(w,"Error while parsing the id",http.StatusInternalServerError)
+	return
+}
+
+users:=h.DB.Collection("users")
+var user models.User
+
+err=users.FindOne(context.Background(),bson.M{"_id":userid}).Decode(&user)
+if err!=nil{
+	http.Error(w,"user not found", http.StatusNotFound)
+	return
+}
+
+var input struct{
+
+	ISBN    string  `json:"isbn"`
+
+}
+
+
+if err:=json.NewDecoder(r.Body).Decode(&input);err!=nil{
+	http.Error(w,"error while recieveing input", http.StatusBadRequest)
+	return 
+}
+books:=h.DB.Collection("books")
+
+   var book models.Book
+if err:=books.FindOne(context.Background(),bson.M{"reader_id":input.ISBN}).Decode(&book); err!=nil{
+	http.Error(w,"no such book exists!", http.StatusNotFound)
+	return
+}
+
+// now lastly we can insert the book into reading progress of the user
+
+
+// type Reading struct {
+// 	ID primitive.ObjectID `bson:"_id,omitempty"`
+// 	BookID primitive.ObjectID `bson:"book_id"`
+// 	UserID primitive.ObjectID  `bson:"user_id"`
+// 	ReaderID string            `bson:"reader_id"`
+
+
+// }
+
+reading:=h.DB.Collection("reading")
+_,err=reading.InsertOne(context.Background(), bson.M{
+		"book_id":book.ID,
+		"user_id": userid,
+		"reader_id": user.ReaderID,	
+		"started_at" : time.Now(),
+	})
+	if err!=nil{
+	http.Error(w,"failed to record", http.StatusInternalServerError)
+	return
+}
+
+
+
+// now tell the user that he has added the book to the reading db
+w.WriteHeader(http.StatusOK)
+
+json.NewEncoder(w).Encode(map[string]string{
+	"message":"the book is marked as reading!",
+})
+}
+
+
+
 // the admin will apporve if the book is returned or not!
 func (h *BookHandler) ReturnBook(w http.ResponseWriter, r *http.Request) {
 	// Verify JWT
@@ -447,12 +552,6 @@ func (h *BookHandler) ReturnBook(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Book returned successfully"})
 }
-
-
-// we must have another db collection that records books which are currently  being read! so when i user takes a hardcopy book, 
-// we will immediatly ad the book under the reading record by the user! 
-// then he also can add a soft copy book into the collection and mark them as being read!
-
 
 
 

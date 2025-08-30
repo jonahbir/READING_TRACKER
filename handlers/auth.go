@@ -30,7 +30,6 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		Email             string `json:"email"`
 		Password          string `json:"password"`
 		Name              string `json:"name"`
-		StudentID         string `json:"student_id"`
 		InsaBatch         string `json:"insa_batch"`
 		DormNumber        string `json:"dorm_number"`
 		EducationalStatus string `json:"educational_status"`
@@ -105,7 +104,6 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		Password:          string(hashedPassword),
 		ReaderID:          reader_id,
 		Name:              input.Name,
-		StudentID:         input.StudentID,
 		InsaBatch:         input.InsaBatch,
 		DormNumber:        input.DormNumber,
 		EducationalStatus: input.EducationalStatus,
@@ -235,7 +233,6 @@ func (h *AuthHandler) ApproveUser(w http.ResponseWriter, r *http.Request) {
 		Name:              pendingUser.Name,
 		ReaderID:           pendingUser.ReaderID,
 		Role:              "student",
-		StudentID:         pendingUser.StudentID,
 		InsaBatch:         pendingUser.InsaBatch,
 		DormNumber:        pendingUser.DormNumber,
 		EducationalStatus: pendingUser.EducationalStatus,

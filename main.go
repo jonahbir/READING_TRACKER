@@ -76,19 +76,19 @@ func main() {
 	})
 
 	// Authentication-related routes
-	router.HandleFunc("/register", authHandler.Register).Methods("POST")
-	router.HandleFunc("/login", authHandler.Login).Methods("POST")
-	router.HandleFunc("/approve-user", authHandler.ApproveUser).Methods("POST")
+	router.HandleFunc("/register", authHandler.Register).Methods("POST") // working
+	router.HandleFunc("/login", authHandler.Login).Methods("POST")    //  orking
+	router.HandleFunc("/approve-user", authHandler.ApproveUser).Methods("POST")  // working
 	// Book-related routes
-	router.HandleFunc("/add-book", bookHandler.AddBook).Methods("POST")
-	router.HandleFunc("/books",bookHandler.ListAllBooks).Methods("GET")
-	router.HandleFunc("/available-books", bookHandler.ListavailableBooks).Methods("GET")
-	router.HandleFunc("/borrow-book", bookHandler.BorrowBook).Methods("POST")
-	router.HandleFunc("/return-book", bookHandler.ReturnBook).Methods("POST")
-	router.HandleFunc("/reading-progress", bookHandler.UpdateReadingProgress).Methods("POST")
-	router.HandleFunc("/submit-review", bookHandler.SubmitReview).Methods("POST")
-	router.HandleFunc("/approve-review", bookHandler.ApproveReview).Methods("POST")
-
+	router.HandleFunc("/add-book", bookHandler.AddBook).Methods("POST")  // working this will enable the admin to add a book 
+	router.HandleFunc("/books",bookHandler.ListAllBooks).Methods("GET")   // working  this will list all books avalailable + unavailable--- no authenticaion it works for ang body 
+	router.HandleFunc("/available-books", bookHandler.ListavailableBooks).Methods("GET") // working this will enables us to see books avalailable soft copy+ hardcopy that are not borrowed 
+	router.HandleFunc("/borrow-book", bookHandler.BorrowBook).Methods("POST")// working--this will enable us to borrow hardware book--user
+	router.HandleFunc("/return-book", bookHandler.ReturnBook).Methods("POST") // this will enable us to return a hardcopy  book. admin 
+	router.HandleFunc("/reading-progress", bookHandler.UpdateReadingProgress).Methods("POST") // working-- this will add a book into a reading progress 
+	router.HandleFunc("/submit-review", bookHandler.SubmitReview).Methods("POST") // working--this will enable the user to submit a review
+	router.HandleFunc("/approve-review", bookHandler.ApproveReview).Methods("POST") // working--this approves the reading progress admin previalige
+	router.HandleFunc("/add-soft-to-reading", bookHandler.AddToReading).Methods("POST") // working- this adds the softcopy book into reading list 
 	port := os.Getenv("PORT")
 	log.Printf("Server starting on :%s...", port)
 

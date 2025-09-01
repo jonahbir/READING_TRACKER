@@ -311,6 +311,7 @@ func (h *BookHandler) BorrowBook(w http.ResponseWriter, r *http.Request) {
 		"reader_id":   user.ReaderID,
 		"book_id":     book.ID,
 		"borrow_date": time.Now(),
+		"type":book.Type,
 	})
 	if err != nil {
 		http.Error(w, "Failed to record borrow", http.StatusInternalServerError)
@@ -404,7 +405,7 @@ func (h *BookHandler) AddToReading(w http.ResponseWriter, r *http.Request) {
 	books := h.DB.Collection("books")
 
 	var book models.Book
-	if err := books.FindOne(context.Background(), bson.M{"reader_id": input.ISBN}).Decode(&book); err != nil {
+	if err := books.FindOne(context.Background(), bson.M{"isbn": input.ISBN}).Decode(&book); err != nil {
 		http.Error(w, "no such book exists!", http.StatusNotFound)
 		return
 	}
@@ -668,7 +669,7 @@ func (h *BookHandler) UpdateReadingProgress(w http.ResponseWriter, r *http.Reque
 		// Create new
 		_, err = readingProgress.InsertOne(context.Background(), models.ReadingProgress{
 			UserID:      userID,
-			BookID:      book.ID,
+			BookID:      book_original.ID,
 			PagesRead:   input.PagesRead,
 			TotalPages:  book_original.TotalPages,
 			Reflection:  input.Reflection,
@@ -680,19 +681,6 @@ func (h *BookHandler) UpdateReadingProgress(w http.ResponseWriter, r *http.Reque
 		if err != nil {
 			http.Error(w, "Failed to create progress", http.StatusInternalServerError)
 			return
-		}
-	
-
-		if input.PagesRead == book_original.TotalPages {
-			_, err := reading.UpdateOne(context.Background(), bson.M{
-				"book_id": book.ID,
-			}, bson.M{"$set": bson.M{
-			"finished_reading": time.Now(),
-		}})
-		
-			if err != nil {
-				http.Error(w, "Error while inserting file into reading", http.StatusInternalServerError)
-			}
 		}
 
 		w.WriteHeader(http.StatusCreated)
@@ -868,11 +856,16 @@ func (h *BookHandler) ApproveReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate input
-	if input.ReaderID == "" || (input.Status != "approved" && input.Status != "rejected") {
-		http.Error(w, "Invalid review ID or status", http.StatusBadRequest)
+	if input.ReaderID == "" {
+		http.Error(w, "Invalid review ID or status1", http.StatusBadRequest)
 		return
 	}
 
+	// Validate input
+	if input.Status != "approved" && input.Status != "rejected" {
+		http.Error(w, "Invalid review ID or status2", http.StatusBadRequest)
+		return
+	}
 	// Find review
 	reviews := h.DB.Collection("Reviews")
 	var review models.Review
@@ -885,14 +878,20 @@ func (h *BookHandler) ApproveReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update review
-	update := bson.M{
+	// // Update review
+	// update := bson.M{
+	// 	"$set": bson.M{
+	// 		"ai_check_status": input.Status,
+	// 		"posted":          input.Status == "approved",
+	// 	},
+	// }
+	save := input.Status == "approved"
+	_, err = reviews.UpdateOne(context.Background(), bson.M{"reader_id": input.ReaderID}, bson.M{
 		"$set": bson.M{
 			"ai_check_status": input.Status,
-			"posted":          input.Status == "approved",
+			"posted":          save,
 		},
-	}
-	_, err = reviews.UpdateOne(context.Background(), bson.M{"_id": input.ReaderID}, update)
+	})
 	if err != nil {
 		http.Error(w, "Failed to update review", http.StatusInternalServerError)
 		return
@@ -911,17 +910,19 @@ func (h *BookHandler) ApproveReview(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Mark ReadingProgress as completed
-		_, err = h.DB.Collection("ReadingProgress").UpdateOne(context.Background(), bson.M{
-			"user_id": review.UserID,
-			"book_id": review.BookID,
-		}, bson.M{
-			"$set": bson.M{"completed": true},
-		})
-		if err != nil {
-			http.Error(w, "Failed to update reading progress", http.StatusInternalServerError)
-			return
-		}
+		_, err := h.DB.Collection("ReadingProgress").UpdateOne(
+    context.Background(),
+    bson.M{"user_id": review.UserID, "book_id": review.BookID},
+    bson.M{"$set": bson.M{"completed": true}},
+)
+
+if err != nil {
+   
+    http.Error(w, "Failed to update reading progress", http.StatusInternalServerError)
+    return
+}
+
+
 	}
 
 	reading := h.DB.Collection("reading")
@@ -939,4 +940,3 @@ func (h *BookHandler) ApproveReview(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Review " + input.Status})
 }
-

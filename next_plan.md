@@ -69,6 +69,8 @@ Return 401 for unauthenticated users, 403 for unverified users, or 404 if no pro
 
 
 
+
+
 GET /user-borrow-history
 
 Purpose: Allow authenticated users to see their borrowing history (past and current borrows).

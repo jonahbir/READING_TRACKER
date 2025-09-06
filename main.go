@@ -89,6 +89,9 @@ func main() {
 	router.HandleFunc("/submit-review", bookHandler.SubmitReview).Methods("POST") // working--this will enable the user to submit a review
 	router.HandleFunc("/approve-review", bookHandler.ApproveReview).Methods("POST") // working--this approves the reading progress admin previalige
 	router.HandleFunc("/add-soft-to-reading", bookHandler.AddToReading).Methods("POST") // working- this adds the softcopy book into reading list 
+	router.HandleFunc("/user-reading-progress", bookHandler.ShowReadingProgress).Methods("GET") 
+	router.HandleFunc("/user-borrow-history", bookHandler.ShowBorrowHistory).Methods("GET") 
+	
 	port := os.Getenv("PORT")
 	log.Printf("Server starting on :%s...", port)
 

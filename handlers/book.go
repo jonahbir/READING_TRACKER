@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-
 	"net/http"
 	"os"
 	"reading-tracker/backend/models"
@@ -311,7 +310,7 @@ func (h *BookHandler) BorrowBook(w http.ResponseWriter, r *http.Request) {
 		"reader_id":   user.ReaderID,
 		"book_id":     book.ID,
 		"borrow_date": time.Now(),
-		"type":book.Type,
+		"type":        book.Type,
 	})
 	if err != nil {
 		http.Error(w, "Failed to record borrow", http.StatusInternalServerError)
@@ -320,17 +319,14 @@ func (h *BookHandler) BorrowBook(w http.ResponseWriter, r *http.Request) {
 
 	// record reading
 
-	// ID primitive.ObjectID `bson:"_id,omitempty"`
-	// BookID primitive.ObjectID `bson:"book_id"`
-	// UserID primitive.ObjectID  `bson:"user_id"`
-	// ReaderID string            `bson:"reader_id"`
 	reading := h.DB.Collection("reading")
 	_, err = reading.InsertOne(context.Background(), bson.M{
-		"book_id":    book.ID,
-		"user_id":    studentID,
-		"reader_id":  user.ReaderID,
-		"isbn":       book.ISBN,
-		"started_at": time.Now(),
+		"book_id":          book.ID,
+		"user_id":          studentID,
+		"reader_id":        user.ReaderID,
+		"isbn":             book.ISBN,
+		"started_at":       time.Now(),
+		"added_to_reading": false,
 	})
 	if err != nil {
 		http.Error(w, "failed to record reading", http.StatusInternalServerError)
@@ -421,12 +417,20 @@ func (h *BookHandler) AddToReading(w http.ResponseWriter, r *http.Request) {
 	// }
 
 	reading := h.DB.Collection("reading")
+
+	if count, _ := reading.CountDocuments(context.Background(), bson.M{"book_id": book.ID}); count > 0 {
+		http.Error(w, "this book is already marked as reading !", http.StatusConflict)
+		return
+
+	}
+
 	_, err = reading.InsertOne(context.Background(), bson.M{
-		"book_id":    book.ID,
-		"user_id":    userid,
-		"isbn":       input.ISBN,
-		"reader_id":  user.ReaderID,
-		"started_at": time.Now(),
+		"book_id":          book.ID,
+		"user_id":          userid,
+		"isbn":             input.ISBN,
+		"reader_id":        user.ReaderID,
+		"started_at":       time.Now(),
+		"added_to_reading": false,
 	})
 	if err != nil {
 		http.Error(w, "failed to record", http.StatusInternalServerError)
@@ -648,6 +652,7 @@ func (h *BookHandler) UpdateReadingProgress(w http.ResponseWriter, r *http.Reque
 	update := bson.M{
 		"$set": bson.M{
 			"pages_read":   input.PagesRead,
+			"reader_id":    user.ReaderID,
 			"reflection":   input.Reflection,
 			"streak_days":  streakDays,
 			"last_updated": time.Now(),
@@ -663,23 +668,32 @@ func (h *BookHandler) UpdateReadingProgress(w http.ResponseWriter, r *http.Reque
 			http.Error(w, "Failed to update progress", http.StatusInternalServerError)
 			return
 		}
+
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]string{"message": "Progress updated"})
 	} else {
 		// Create new
 		_, err = readingProgress.InsertOne(context.Background(), models.ReadingProgress{
-			UserID:      userID,
-			BookID:      book_original.ID,
-			PagesRead:   input.PagesRead,
-			TotalPages:  book_original.TotalPages,
-			Reflection:  input.Reflection,
-			StreakDays:  streakDays,
-			ISBN:        input.ISBN,
-			Completed:   false,
-			LastUpdated: time.Now(),
+			UserID:         userID,
+			BookID:         book_original.ID,
+			PagesRead:      input.PagesRead,
+			TotalPages:     book_original.TotalPages,
+			Reflection:     input.Reflection,
+			StreakDays:     streakDays,
+			ISBN:           input.ISBN,
+			StartedReading: book.StartedReading,
+			Completed:      false,
+			LastUpdated:    time.Now(),
 		})
+
 		if err != nil {
 			http.Error(w, "Failed to create progress", http.StatusInternalServerError)
+			return
+		}
+
+		_, err = reading.UpdateOne(context.Background(), bson.M{"isbn": input.ISBN, "user_id": userID}, bson.M{"$set": bson.M{"added_to_progress": true}})
+		if err != nil {
+			http.Error(w, "Error while updating reading", http.StatusInternalServerError)
 			return
 		}
 
@@ -911,17 +925,16 @@ func (h *BookHandler) ApproveReview(w http.ResponseWriter, r *http.Request) {
 		}
 
 		_, err := h.DB.Collection("ReadingProgress").UpdateOne(
-    context.Background(),
-    bson.M{"user_id": review.UserID, "book_id": review.BookID},
-    bson.M{"$set": bson.M{"completed": true}},
-)
+			context.Background(),
+			bson.M{"user_id": review.UserID, "book_id": review.BookID},
+			bson.M{"$set": bson.M{"completed": true, "finished_reading": time.Now()}},
+		)
 
-if err != nil {
-   
-    http.Error(w, "Failed to update reading progress", http.StatusInternalServerError)
-    return
-}
+		if err != nil {
 
+			http.Error(w, "Failed to update reading progress", http.StatusInternalServerError)
+			return
+		}
 
 	}
 
@@ -939,4 +952,314 @@ if err != nil {
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Review " + input.Status})
+}
+
+// now we are going to build another end point user-reading-progress
+// this end point will show the user it's own reading progress
+
+func (h *BookHandler) ShowReadingProgress(w http.ResponseWriter, r *http.Request) {
+
+	tokenString := r.Header.Get("Authorization")
+	if tokenString == "" {
+		http.Error(w, "Missing token", http.StatusUnauthorized)
+		return
+	}
+	if len(tokenString) > 7 && tokenString[:7] == "Bearer " {
+		tokenString = tokenString[7:]
+	}
+
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return []byte(os.Getenv("JWT_SECRET")), nil
+	})
+	if err != nil || !token.Valid {
+		http.Error(w, "Invalid token", http.StatusUnauthorized)
+		return
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok || claims["role"] != "student" {
+		http.Error(w, "Student access required", http.StatusForbidden)
+		return
+	}
+
+	// Get student ID from JWT
+	studentID, err := primitive.ObjectIDFromHex(claims["user_id"].(string))
+	if err != nil {
+		http.Error(w, "Invalid student ID", http.StatusBadRequest)
+		return
+	}
+
+	users := h.DB.Collection("users")
+	var user models.User
+	reading := h.DB.Collection("reading")
+	readingprogress := h.DB.Collection("ReadingProgress")
+
+	if err := users.FindOne(context.Background(), bson.M{"_id": studentID}).Decode(&user); err != nil {
+		http.Error(w, "this user doesn't exist", http.StatusUnauthorized)
+		return
+
+	}
+
+	var BooksReading []models.Reading
+
+	Curser, err := reading.Find(context.Background(), bson.M{"user_id": studentID, "added_to_progress": false})
+
+	if err != nil {
+		http.Error(w, "this user is not reading any book!", http.StatusNotFound)
+		return
+	}
+
+	defer Curser.Close(context.Background())
+
+	if err := Curser.All(context.Background(), &BooksReading); err != nil {
+		http.Error(w, "error while loading the book", http.StatusInternalServerError)
+		return
+	}
+
+	var BooksInProgress []models.ReadingProgress
+	Curser, _ = readingprogress.Find(context.Background(), bson.M{"user_id": studentID})
+	Curser.Close(context.Background())
+	_ = Curser.All(context.Background(), &BooksInProgress)
+
+	// now we will create a new list and add all elements from the reading progress and the reading to this list
+	// to do this, we will go through both lists and take these properties from the lists
+
+	// what properties do we take ?
+	// pages read -
+	// total page -
+	// reflation
+	// completed status
+	// startdate-
+	// completed date if completed
+	// title of the book
+	// ISBN of the book
+	//streakdays
+	// lastupdated
+	books := h.DB.Collection("books")
+	var book models.Book
+
+	type ans struct {
+		Title           string    `json:"title"`
+		Author          string    `json:"author"`
+		ISBN            string    `json:"isbn"`
+		TotalPage       int       `json:"total_page"`
+		PagesRead       int       `json:"pages_read"`
+		StartDate       time.Time `json:"start_date"`
+		CompletedStatus bool      `json:"competed_status"`
+		Reflection      string    `json:"reflection"`
+		CompletedDate   time.Time `json:"competed_date"`
+		StreakDays      int       `json:"streak_days"`
+		LastUpdated     time.Time `json:"last_updated"`
+	}
+
+	var returnvalues []ans
+
+	i := 0
+
+	for i < len(BooksInProgress) {
+		_ = books.FindOne(context.Background(), bson.M{"_id": BooksInProgress[i].BookID}).Decode(book)
+
+		var temp ans
+		temp.Title = book.Title
+		temp.Author = book.Author
+		temp.ISBN = BooksInProgress[i].ISBN
+		temp.TotalPage = BooksInProgress[i].TotalPages
+		temp.PagesRead = BooksInProgress[i].PagesRead
+		temp.StartDate = BooksInProgress[i].StartedReading
+		temp.CompletedStatus = BooksInProgress[i].Completed
+		temp.Reflection = BooksInProgress[i].Reflection
+		temp.CompletedDate = BooksInProgress[i].FinishedReading
+		temp.StreakDays = BooksInProgress[i].StreakDays
+		temp.LastUpdated = BooksInProgress[i].LastUpdated
+		// now append it to the return value
+		returnvalues = append(returnvalues, temp)
+
+	}
+
+	j := 0
+	for i < len(BooksReading) {
+
+		var temp ans
+		temp.Title = book.Title
+		temp.Author = book.Author
+		temp.ISBN = BooksReading[j].ISBN
+		temp.TotalPage = book.TotalPages
+		temp.PagesRead = 0
+		temp.StartDate = BooksReading[j].StartedReading
+		temp.CompletedStatus = false
+		temp.Reflection = ""
+		temp.StreakDays = 0
+		// now append it to the return value
+		returnvalues = append(returnvalues, temp)
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]any{"your reading progress": returnvalues})
+
+}
+
+
+// GET /user-borrow-history
+
+
+func (h *BookHandler)ShowBorrowHistory(w http.ResponseWriter, r *http.Request){
+
+	tokenString := r.Header.Get("Authorization")
+	if tokenString==""{
+		http.Error(w,"missing token",http.StatusUnauthorized)
+		return
+	}
+
+	if len(tokenString)>7 && tokenString[:7]=="Bearer"{
+		tokenString=tokenString[7:]
+	}
+
+	token,err:=jwt.Parse(tokenString, func(token *jwt.Token) (any, error){
+		return []byte(os.Getenv("JWT_SECRET")),nil
+	})
+
+	if err!=nil || !token.Valid{
+		http.Error(w, "invalid token", http.StatusUnauthorized)
+		return
+
+	}
+
+	claims,ok:= token.Claims.(jwt.MapClaims)
+	
+	if !ok || claims["role"]!="student"{
+		http.Error(w,"student access required", http.StatusForbidden)
+		return
+	}
+
+	studentID,err:=primitive.ObjectIDFromHex(claims["user_id"].(string))
+
+	if err!=nil{
+		http.Error(w,"Invalid ID", http.StatusBadRequest)
+		return
+	}
+
+
+
+	BorrowHistories:=h.DB.Collection("BorrowHistory")
+	var borrowHistory []models.BorrowHistory
+
+	curser,err:=BorrowHistories.Find(context.Background(),bson.M{"user_id":studentID})
+
+	if err!=nil{
+		http.Error(w,"error while parsing borrow history", http.StatusInternalServerError)
+		return
+	}
+
+    defer curser.Close(context.Background())
+
+	if err:=curser.All(context.Background(),&borrowHistory); err!=nil{
+		http.Error(w,"error while loading a book",http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(borrowHistory)
+
+
+   
+}
+
+
+
+// POST /update-book
+
+
+func (h *BookHandler) UpdateBook(w http.ResponseWriter, r *http.Request){
+
+	tokenString:=r.Header.Get("Authorization")
+
+	if tokenString==""{
+		http.Error(w,"token missing", http.StatusUnauthorized)
+		return
+	}
+
+	if len(tokenString)>7 && tokenString[:7]=="Bearer"{
+		tokenString=tokenString[7:]
+	}
+
+	token,err:=jwt.Parse(tokenString, func(token *jwt.Token) (any, error){
+		return os.Getenv("JWT_SECRET"),nil
+
+	})
+
+	if err!=nil || !token.Valid{
+		http.Error(w,"invalid token", http.StatusUnauthorized)
+		return
+	}
+
+	claims,ok:= token.Claims.(jwt.MapClaims)
+
+	if !ok || claims["role"]!="admin"{
+		http.Error(w,"admin role required", http.StatusForbidden)
+		return 
+
+	}
+
+	// AdminID,err:=primitive.ObjectIDFromHex(claims["user_id"].(string))
+	if err!=nil{
+		http.Error(w, "invalid admin id", http.StatusNotFound)
+		return 
+	}
+
+   // take input
+   type Book struct {
+	Title                   string             `json:"title"`
+	Author                  string             `jon:"author"`
+	ISBN                    string             `json:"isbn"`
+	Type                    string             `json:"type"` // "hardcopy" or "softcopy"
+	PhysicalLocation        string             `json:"physical_location"`
+	PhoneNumberOfTheHandler string             `json:"phone_number_of_the_handler"` // if the book is hardcopy
+	SoftcopyURL             string             `json:"softcopy_url"`
+	AboutTheBook            string             `json:"about_the_book"`
+	TotalPages              int                `json:"total_pages"`
+}
+
+   
+	var input Book
+	// books:=h.DB.Collection("books")
+    
+  
+ err= json.NewDecoder(r.Body).Decode(&input)
+
+ if err!=nil{
+	http.Error(w,"bad input", http.StatusBadRequest)
+	return 
+ }
+
+// i have to update only the elements that the user gave me! so for now i will use a logic! later we will check if there is a simple method to do that
+
+var modify struct{
+	others  []string 
+	totalpages int
+} 
+
+if input.Title!=""{
+	modify.others = append(modify.others, input.Title)
+}
+
+if input.Author!=""{
+	modify.others = append(modify.others, input.Author)
+}
+if input.ISBN!=""{
+	modify.others = append(modify.others, input.ISBN)
+}
+if input.Type!=""{
+	modify.others = append(modify.others, input.Type)
+}
+if input.PhysicalLocation!=""{
+	modify.others = append(modify.others, input.PhysicalLocation)
+}
+if input.PhoneNumberOfTheHandler!=""{
+	modify.others = append(modify.others, input.PhoneNumberOfTheHandler)
+}
+if input.SoftcopyURL!=""{
+	modify.others = append(modify.others, input.SoftcopyURL)
+}
+
+
+
 }

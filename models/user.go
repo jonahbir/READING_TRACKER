@@ -76,6 +76,8 @@ type ReadingProgress struct {
 	StreakDays  int                `bson:"streak_days"`
 	Completed   bool               `bson:"completed"`
 	LastUpdated time.Time          `bson:"last_updated"`
+	StartedReading  time.Time       `bson:"started_at"`
+	FinishedReading time.Time       `bson:"finished_reading"`
 }
 
 type Review struct {
@@ -98,5 +100,6 @@ type Reading struct {
 	UserID          primitive.ObjectID `bson:"user_id"`
 	ReaderID        string             `bson:"reader_id"`
 	StartedReading  time.Time          `bson:"started_at"`
+	AddedToProgress bool               `bson:"added_to_progess"`
 	FinishedReading time.Time          `bson:"finished_reading"`
 }

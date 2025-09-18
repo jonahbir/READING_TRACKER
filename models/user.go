@@ -81,17 +81,20 @@ type ReadingProgress struct {
 }
 
 type Review struct {
-	ID            primitive.ObjectID `bson:"_id,omitempty"`
-	BookID        primitive.ObjectID `bson:"book_id"`
-	UserID        primitive.ObjectID `bson:"user_id"`
-	ReaderID      string             `bson:"reader_id"`
-	ReviewText    string             `bson:"review_text"`
-	AICheckStatus string             `bson:"ai_check_status"` // "pending", "approved", "rejected"
-	AIScore       float64            `bson:"ai_score"`
-	Posted        bool               `bson:"posted"`
-	Upvotes       int                `bson:"upvotes"`
-	CreatedAt     time.Time          `bson:"created_at"`
+	ID            primitive.ObjectID   `bson:"_id,omitempty"`
+	BookID        primitive.ObjectID   `bson:"book_id"`
+	UserID        primitive.ObjectID   `bson:"user_id"`
+	ReaderID      string               `bson:"reader_id"`
+	ReviewText    string               `bson:"review_text"`
+	AICheckStatus string               `bson:"ai_check_status"` // "pending", "approved", "rejected"
+	AIScore       float64              `bson:"ai_score"`
+	Posted        bool                 `bson:"posted"`
+	Upvotes       int                  `bson:"upvotes"`
+	UpvotedBy     []primitive.ObjectID `bson:"upvoted_by"` // NEW
+	CreatedAt     time.Time            `bson:"created_at"`
+	BookDeleted   bool                  `bson:"book_deleted"`
 }
+
 
 type Reading struct {
 	ID              primitive.ObjectID `bson:"_id,omitempty"`

@@ -3,16 +3,17 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"reading-tracker/backend/models"
-
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type BookHandler struct {
@@ -691,7 +692,7 @@ func (h *BookHandler) UpdateReadingProgress(w http.ResponseWriter, r *http.Reque
 			return
 		}
 
-		_, err = reading.UpdateOne(context.Background(), bson.M{"isbn": input.ISBN, "user_id": userID}, bson.M{"$set": bson.M{"added_to_progress": true}})
+		_, err = reading.UpdateOne(context.Background(), bson.M{"isbn": input.ISBN, "user_id": userID}, bson.M{"$set": bson.M{"added_to_reading": true}})
 		if err != nil {
 			http.Error(w, "Error while updating reading", http.StatusInternalServerError)
 			return
@@ -805,6 +806,7 @@ func (h *BookHandler) SubmitReview(w http.ResponseWriter, r *http.Request) {
 		AICheckStatus: "pending",
 		AIScore:       0,
 		Posted:        false,
+		BookDeleted:   false,
 		Upvotes:       0,
 		CreatedAt:     time.Now(),
 	})
@@ -885,6 +887,7 @@ func (h *BookHandler) ApproveReview(w http.ResponseWriter, r *http.Request) {
 	var review models.Review
 	err = reviews.FindOne(context.Background(), bson.M{
 		"reader_id":       input.ReaderID,
+		"book_deleted":    false,
 		"ai_check_status": "pending",
 	}).Decode(&review)
 	if err != nil {
@@ -916,7 +919,6 @@ func (h *BookHandler) ApproveReview(w http.ResponseWriter, r *http.Request) {
 		_, err = users.UpdateOne(context.Background(), bson.M{"_id": review.UserID}, bson.M{
 			"$inc": bson.M{
 				"books_read": 1,
-				"rank_score": 10, // not caculated for now
 			},
 		})
 		if err != nil {
@@ -1001,7 +1003,7 @@ func (h *BookHandler) ShowReadingProgress(w http.ResponseWriter, r *http.Request
 
 	var BooksReading []models.Reading
 
-	Curser, err := reading.Find(context.Background(), bson.M{"user_id": studentID, "added_to_progress": false})
+	Curser, err := reading.Find(context.Background(), bson.M{"user_id": studentID, "added_to_reading": false})
 
 	if err != nil {
 		http.Error(w, "this user is not reading any book!", http.StatusNotFound)
@@ -1017,7 +1019,8 @@ func (h *BookHandler) ShowReadingProgress(w http.ResponseWriter, r *http.Request
 
 	var BooksInProgress []models.ReadingProgress
 	Curser, _ = readingprogress.Find(context.Background(), bson.M{"user_id": studentID})
-	Curser.Close(context.Background())
+
+	defer Curser.Close(context.Background())
 	_ = Curser.All(context.Background(), &BooksInProgress)
 
 	// now we will create a new list and add all elements from the reading progress and the reading to this list
@@ -1046,18 +1049,17 @@ func (h *BookHandler) ShowReadingProgress(w http.ResponseWriter, r *http.Request
 		StartDate       time.Time `json:"start_date"`
 		CompletedStatus bool      `json:"competed_status"`
 		Reflection      string    `json:"reflection"`
-		CompletedDate   time.Time `json:"competed_date"`
+		CompletedDate   time.Time `json:"completed_date"`
 		StreakDays      int       `json:"streak_days"`
 		LastUpdated     time.Time `json:"last_updated"`
 	}
 
 	var returnvalues []ans
 
-	i := 0
+	for i := 0; i < len(BooksInProgress); i++ {
 
-	for i < len(BooksInProgress) {
-		_ = books.FindOne(context.Background(), bson.M{"_id": BooksInProgress[i].BookID}).Decode(book)
-
+		_ = books.FindOne(context.Background(), bson.M{"_id": BooksInProgress[i].BookID}).Decode(&book)
+		fmt.Println("book id for progress", BooksInProgress[i].BookID)
 		var temp ans
 		temp.Title = book.Title
 		temp.Author = book.Author
@@ -1075,9 +1077,12 @@ func (h *BookHandler) ShowReadingProgress(w http.ResponseWriter, r *http.Request
 
 	}
 
-	j := 0
-	for i < len(BooksReading) {
-
+	for j := 0; j < len(BooksReading); j++ {
+		err = books.FindOne(context.Background(), bson.M{"_id": BooksReading[j].BookID}).Decode(&book)
+		if err != nil {
+			continue
+		}
+		fmt.Println("book id for reading", BooksReading[j].BookID)
 		var temp ans
 		temp.Title = book.Title
 		temp.Author = book.Author
@@ -1097,169 +1102,428 @@ func (h *BookHandler) ShowReadingProgress(w http.ResponseWriter, r *http.Request
 
 }
 
-
 // GET /user-borrow-history
 
-
-func (h *BookHandler)ShowBorrowHistory(w http.ResponseWriter, r *http.Request){
+func (h *BookHandler) ShowBorrowHistory(w http.ResponseWriter, r *http.Request) {
 
 	tokenString := r.Header.Get("Authorization")
-	if tokenString==""{
-		http.Error(w,"missing token",http.StatusUnauthorized)
+	if tokenString == "" {
+		http.Error(w, "missing token", http.StatusUnauthorized)
 		return
 	}
 
-	if len(tokenString)>7 && tokenString[:7]=="Bearer"{
-		tokenString=tokenString[7:]
+	if len(tokenString) > 7 && tokenString[:7] == "Bearer " {
+		tokenString = tokenString[7:]
 	}
 
-	token,err:=jwt.Parse(tokenString, func(token *jwt.Token) (any, error){
-		return []byte(os.Getenv("JWT_SECRET")),nil
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return []byte(os.Getenv("JWT_SECRET")), nil
 	})
 
-	if err!=nil || !token.Valid{
+	if err != nil {
+		http.Error(w, "error while parsing the token", http.StatusUnauthorized)
+		return
+	}
+
+	if !token.Valid {
 		http.Error(w, "invalid token", http.StatusUnauthorized)
 		return
 
 	}
 
-	claims,ok:= token.Claims.(jwt.MapClaims)
-	
-	if !ok || claims["role"]!="student"{
-		http.Error(w,"student access required", http.StatusForbidden)
+	claims, ok := token.Claims.(jwt.MapClaims)
+
+	if !ok || claims["role"] != "student" {
+		http.Error(w, "student access required", http.StatusForbidden)
 		return
 	}
 
-	studentID,err:=primitive.ObjectIDFromHex(claims["user_id"].(string))
+	studentID, err := primitive.ObjectIDFromHex(claims["user_id"].(string))
 
-	if err!=nil{
-		http.Error(w,"Invalid ID", http.StatusBadRequest)
+	if err != nil {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
 		return
 	}
 
-
-
-	BorrowHistories:=h.DB.Collection("BorrowHistory")
+	BorrowHistories := h.DB.Collection("BorrowHistory")
 	var borrowHistory []models.BorrowHistory
 
-	curser,err:=BorrowHistories.Find(context.Background(),bson.M{"user_id":studentID})
+	curser, err := BorrowHistories.Find(context.Background(), bson.M{"user_id": studentID})
 
-	if err!=nil{
-		http.Error(w,"error while parsing borrow history", http.StatusInternalServerError)
+	if err != nil {
+		http.Error(w, "error while parsing borrow history", http.StatusInternalServerError)
 		return
 	}
 
-    defer curser.Close(context.Background())
+	defer curser.Close(context.Background())
 
-	if err:=curser.All(context.Background(),&borrowHistory); err!=nil{
-		http.Error(w,"error while loading a book",http.StatusInternalServerError)
+	if err := curser.All(context.Background(), &borrowHistory); err != nil {
+		http.Error(w, "error while loading a book", http.StatusInternalServerError)
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(borrowHistory)
 
-
-   
 }
-
-
-
-// POST /update-book
-
-
-func (h *BookHandler) UpdateBook(w http.ResponseWriter, r *http.Request){
-
-	tokenString:=r.Header.Get("Authorization")
-
-	if tokenString==""{
-		http.Error(w,"token missing", http.StatusUnauthorized)
+func (h *BookHandler) UpdateBook(w http.ResponseWriter, r *http.Request) {
+	// Verify JWT
+	tokenString := r.Header.Get("Authorization")
+	if tokenString == "" {
+		http.Error(w, `{"error": "Missing token"}`, http.StatusUnauthorized)
 		return
 	}
-
-	if len(tokenString)>7 && tokenString[:7]=="Bearer"{
-		tokenString=tokenString[7:]
+	if len(tokenString) > 7 && tokenString[:7] == "Bearer " {
+		tokenString = tokenString[7:]
 	}
 
-	token,err:=jwt.Parse(tokenString, func(token *jwt.Token) (any, error){
-		return os.Getenv("JWT_SECRET"),nil
-
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return []byte(os.Getenv("JWT_SECRET")), nil
 	})
-
-	if err!=nil || !token.Valid{
-		http.Error(w,"invalid token", http.StatusUnauthorized)
+	if err != nil || !token.Valid {
+		http.Error(w, `{"error": "Invalid token"}`, http.StatusUnauthorized)
+		return
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok || claims["role"] != "admin" {
+		http.Error(w, `{"error": "Admin role required"}`, http.StatusForbidden)
 		return
 	}
 
-	claims,ok:= token.Claims.(jwt.MapClaims)
-
-	if !ok || claims["role"]!="admin"{
-		http.Error(w,"admin role required", http.StatusForbidden)
-		return 
-
+	// Get admin_id
+	adminID, err := primitive.ObjectIDFromHex(claims["user_id"].(string))
+	if err != nil {
+		http.Error(w, `{"error": "Invalid admin ID"}`, http.StatusBadRequest)
+		return
 	}
 
-	// AdminID,err:=primitive.ObjectIDFromHex(claims["user_id"].(string))
-	if err!=nil{
-		http.Error(w, "invalid admin id", http.StatusNotFound)
-		return 
+	// Check admin exists
+	users := h.DB.Collection("users")
+	var admin models.User
+	err = users.FindOne(context.Background(), bson.M{"_id": adminID, "role": "admin"}).Decode(&admin)
+	if err != nil {
+		http.Error(w, `{"error": "Admin not found"}`, http.StatusForbidden)
+		return
 	}
 
-   // take input
-   type Book struct {
-	Title                   string             `json:"title"`
-	Author                  string             `jon:"author"`
-	ISBN                    string             `json:"isbn"`
-	Type                    string             `json:"type"` // "hardcopy" or "softcopy"
-	PhysicalLocation        string             `json:"physical_location"`
-	PhoneNumberOfTheHandler string             `json:"phone_number_of_the_handler"` // if the book is hardcopy
-	SoftcopyURL             string             `json:"softcopy_url"`
-	AboutTheBook            string             `json:"about_the_book"`
-	TotalPages              int                `json:"total_pages"`
+	// Define input struct with pointers for optional fields
+	type BookInput struct {
+		ISBN                    string  `json:"isbn"`
+		Title                   *string `json:"title"`
+		Author                  *string `json:"author"`
+		Type                    *string `json:"type"`
+		PhysicalLocation        *string `json:"physical_location"`
+		PhoneNumberOfTheHandler *string `json:"phone_number_of_the_handler"`
+		SoftcopyURL             *string `json:"softcopy_url"`
+		AboutTheBook            *string `json:"about_the_book"`
+		TotalPages              *int    `json:"total_pages"`
+	}
+
+	var input BookInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, `{"error": "Invalid input"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Validate ISBN
+	if input.ISBN == "" {
+		http.Error(w, `{"error": "ISBN is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Find existing book
+	books := h.DB.Collection("books")
+	var book models.Book
+	err = books.FindOne(context.Background(), bson.M{"isbn": input.ISBN}).Decode(&book)
+	if err != nil {
+		http.Error(w, `{"error": "Book not found"}`, http.StatusNotFound)
+		return
+	}
+
+	// Build dynamic update query
+	updateFields := bson.M{}
+	if input.Title != nil {
+		updateFields["title"] = *input.Title
+	}
+	if input.Author != nil {
+		updateFields["author"] = *input.Author
+	}
+	if input.AboutTheBook != nil {
+		updateFields["about_the_book"] = *input.AboutTheBook
+	}
+	if input.TotalPages != nil {
+		if *input.TotalPages < 0 {
+			http.Error(w, `{"error": "Total pages must be non-negative"}`, http.StatusBadRequest)
+			return
+		}
+		updateFields["total_pages"] = *input.TotalPages
+	}
+
+	// Handle type-specific fields
+	currentType := book.Type
+	if input.Type != nil {
+		if *input.Type != "hardcopy" && *input.Type != "softcopy" {
+			http.Error(w, `{"error": "Type must be hardcopy or softcopy"}`, http.StatusBadRequest)
+			return
+		}
+		currentType = *input.Type
+		updateFields["type"] = *input.Type
+	}
+
+	switch currentType {
+	case "hardcopy":
+		if input.PhysicalLocation != nil {
+			updateFields["physical_location"] = *input.PhysicalLocation
+		} else if book.PhysicalLocation == "" {
+			http.Error(w, `{"error": "Physical location required for hardcopy"}`, http.StatusBadRequest)
+			return
+		}
+		if input.PhoneNumberOfTheHandler != nil {
+			updateFields["phone_number_of_the_handler"] = *input.PhoneNumberOfTheHandler
+		} else if book.PhoneNumberOfTheHandler == "" {
+			http.Error(w, `{"error": "Phone number of the handler required for hardcopy"}`, http.StatusBadRequest)
+			return
+		}
+		if input.SoftcopyURL != nil {
+			updateFields["softcopy_url"] = ""
+		}
+	case "softcopy":
+		// Ensure SoftcopyURL is valid
+		if input.SoftcopyURL != nil {
+			updateFields["softcopy_url"] = *input.SoftcopyURL
+		} else if book.SoftcopyURL == "" {
+			http.Error(w, `{"error": "Softcopy URL required for softcopy"}`, http.StatusBadRequest)
+			return
+		}
+		if input.PhysicalLocation != nil {
+			updateFields["physical_location"] = ""
+		}
+		if input.PhoneNumberOfTheHandler != nil {
+			updateFields["phone_number_of_the_handler"] = ""
+		}
+	}
+
+	// If no fields to update, return early
+	if len(updateFields) == 0 {
+		http.Error(w, `{"error": "No fields provided to update"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Execute update
+	result, err := books.UpdateOne(context.Background(), bson.M{"isbn": input.ISBN}, bson.M{"$set": updateFields})
+	if err != nil {
+		http.Error(w, `{"error": "Failed to update book"}`, http.StatusInternalServerError)
+		return
+	}
+	if result.MatchedCount == 0 {
+		http.Error(w, `{"error": "Book not found"}`, http.StatusNotFound)
+		return
+	}
+
+	// Return success response
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Book updated successfully"})
 }
 
-   
-	var input Book
-	// books:=h.DB.Collection("books")
-    
-  
- err= json.NewDecoder(r.Body).Decode(&input)
+// GET /check-book-readers
+func (h *BookHandler) CheckBookReaders(w http.ResponseWriter, r *http.Request) {
+	tokenString := r.Header.Get("Authorization")
+	if tokenString == "" {
+		http.Error(w, `{"error": "Token is required"}`, http.StatusUnauthorized)
+		return
+	}
+	if len(tokenString) > 7 && tokenString[:7] == "Bearer " {
+		tokenString = tokenString[7:]
+	}
 
- if err!=nil{
-	http.Error(w,"bad input", http.StatusBadRequest)
-	return 
- }
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return []byte(os.Getenv("JWT_SECRET")), nil
+	})
+	if err != nil || !token.Valid {
+		http.Error(w, `{"error": "Invalid token"}`, http.StatusForbidden)
+		return
+	}
 
-// i have to update only the elements that the user gave me! so for now i will use a logic! later we will check if there is a simple method to do that
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok || claims["role"] != "admin" {
+		http.Error(w, `{"error": "Admin access required"}`, http.StatusUnauthorized)
+		return
+	}
 
-var modify struct{
-	others  []string 
-	totalpages int
-} 
+	AdminID, err := primitive.ObjectIDFromHex(claims["user_id"].(string))
+	if err != nil {
+		http.Error(w, `{"error": "Could not parse admin ID"}`, http.StatusBadRequest)
+		return
+	}
 
-if input.Title!=""{
-	modify.others = append(modify.others, input.Title)
+	users := h.DB.Collection("users")
+	var user models.User
+	err = users.FindOne(context.Background(), bson.M{"_id": AdminID, "role": "admin"}).Decode(&user)
+	if err != nil {
+		http.Error(w, `{"error": "Admin does not exist"}`, http.StatusForbidden)
+		return
+	}
+
+	var input struct {
+		ISBN string `json:"isbn"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, `{"error": "Error parsing input"}`, http.StatusBadRequest)
+		return
+	}
+	isbn := input.ISBN
+	if isbn == "" {
+		http.Error(w, `{"error": "ISBN is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Find the book
+	books := h.DB.Collection("books")
+	var book models.Book
+	err = books.FindOne(context.Background(), bson.M{"isbn": isbn}).Decode(&book)
+	if err != nil {
+		http.Error(w, `{"error": "Book not found"}`, http.StatusNotFound)
+		return
+	}
+
+	// Check for active readers (finished_reading does not exist)
+	reading := h.DB.Collection("reading")
+	cursor, err := reading.Find(context.Background(), bson.M{
+		"book_id":          book.ID,
+		"finished_reading": bson.M{"$exists": false},
+	})
+	if err != nil {
+		http.Error(w, `{"error": "Error checking active readers"}`, http.StatusInternalServerError)
+		return
+	}
+	defer cursor.Close(context.Background())
+
+	var activeReaders []struct {
+		UserID   primitive.ObjectID `bson:"user_id"`
+		ReaderID string             `bson:"reader_id"`
+	}
+	if err := cursor.All(context.Background(), &activeReaders); err != nil {
+		http.Error(w, `{"error": "Error fetching active readers"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// Fetch user details for active readers
+	var readerDetails []map[string]string
+	for _, reader := range activeReaders {
+		var readerUser models.User
+		err := users.FindOne(context.Background(), bson.M{"_id": reader.UserID}).Decode(&readerUser)
+		if err != nil {
+			continue // Skip if user not found
+		}
+		readerDetails = append(readerDetails, map[string]string{
+			"reader_id": reader.ReaderID,
+			"name":      readerUser.Name,
+			"email":     readerUser.Email,
+		})
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"isbn":           isbn,
+		"active_readers": readerDetails,
+	})
 }
 
-if input.Author!=""{
-	modify.others = append(modify.others, input.Author)
-}
-if input.ISBN!=""{
-	modify.others = append(modify.others, input.ISBN)
-}
-if input.Type!=""{
-	modify.others = append(modify.others, input.Type)
-}
-if input.PhysicalLocation!=""{
-	modify.others = append(modify.others, input.PhysicalLocation)
-}
-if input.PhoneNumberOfTheHandler!=""{
-	modify.others = append(modify.others, input.PhoneNumberOfTheHandler)
-}
-if input.SoftcopyURL!=""{
-	modify.others = append(modify.others, input.SoftcopyURL)
-}
+// DELETE /delete-book (hard delete book, mark reviews orphaned)
+func (h *BookHandler) DeleteBook(w http.ResponseWriter, r *http.Request) {
+	// ===== JWT Authentication =====
+	tokenString := r.Header.Get("Authorization")
+	if tokenString == "" {
+		http.Error(w, `{"error": "Token is required"}`, http.StatusUnauthorized)
+		return
+	}
+	if len(tokenString) > 7 && tokenString[:7] == "Bearer " {
+		tokenString = tokenString[7:]
+	}
 
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return []byte(os.Getenv("JWT_SECRET")), nil
+	})
+	if err != nil || !token.Valid {
+		http.Error(w, `{"error": "Invalid token"}`, http.StatusForbidden)
+		return
+	}
 
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok || claims["role"] != "admin" {
+		http.Error(w, `{"error": "Admin access required"}`, http.StatusUnauthorized)
+		return
+	}
 
+	AdminID, err := primitive.ObjectIDFromHex(claims["user_id"].(string))
+	if err != nil {
+		http.Error(w, `{"error": "Could not parse admin ID"}`, http.StatusBadRequest)
+		return
+	}
+
+	users := h.DB.Collection("users")
+	var user models.User
+	err = users.FindOne(context.Background(), bson.M{"_id": AdminID, "role": "admin"}).Decode(&user)
+	if err != nil {
+		http.Error(w, `{"error": "Admin does not exist"}`, http.StatusForbidden)
+		return
+	}
+
+	// ===== Parse input =====
+	var input struct {
+		ISBN     string `json:"isbn"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, `{"error": "Error parsing input"}`, http.StatusBadRequest)
+		return
+	}
+	if input.ISBN == "" || input.Password == "" {
+		http.Error(w, `{"error": "ISBN and password are required"}`, http.StatusBadRequest)
+		return
+	}
+
+	// ===== Check password =====
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)); err != nil {
+		http.Error(w, `{"error": "Incorrect password"}`, http.StatusUnauthorized)
+		return
+	}
+
+	// ===== Find the book =====
+	books := h.DB.Collection("books")
+	var book models.Book
+	err = books.FindOne(context.Background(), bson.M{"isbn": input.ISBN}).Decode(&book)
+	if err == mongo.ErrNoDocuments {
+		http.Error(w, `{"error": "Book does not exist"}`, http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, `{"error": "Error checking book"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// ===== Delete the book (hard delete) =====
+	result, err := books.DeleteOne(context.Background(), bson.M{"isbn": input.ISBN})
+	if err != nil || result.DeletedCount == 0 {
+		http.Error(w, `{"error": "Error deleting book"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// ===== Mark related reviews as orphaned =====
+	reviewsCol := h.DB.Collection("Reviews")
+	_, err = reviewsCol.UpdateMany(
+		context.Background(),
+		bson.M{"book_id": book.ID},
+		bson.M{"$set": bson.M{"book_deleted": true}},
+	)
+	if err != nil {
+		http.Error(w, `{"error": "Error marking reviews as orphaned"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// ===== Success response =====
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Book deleted successfully; related reviews marked as orphaned",
+	})
 }

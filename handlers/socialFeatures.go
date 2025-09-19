@@ -515,26 +515,27 @@ func (h *SocialHandler) GetRecommendations(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	// ===== 3. Fill with Random Books =====
-	if len(recommendations) < 8 {
-		limit := 8 - len(recommendations)
-		cursor, err := booksCol.Aggregate(context.Background(), mongo.Pipeline{
-			{{"$match", bson.M{"_id": bson.M{"$nin": readBookIDs}}}},
-			{{"$sample", bson.M{"size": limit}}},
-		})
-		if err == nil {
-			var randomBooks []models.Book
-			if err := cursor.All(context.Background(), &randomBooks); err == nil {
-				for _, b := range randomBooks {
-					if !seen[b.ID] {
-						recommendations = append(recommendations, b)
-						seen[b.ID] = true
-					}
+	// ===== 3. Fill with Random Books ===
+if len(recommendations) < 8 {
+	limit := 8 - len(recommendations)
+	cursor, err := booksCol.Aggregate(context.Background(), mongo.Pipeline{
+		bson.D{{Key: "$match", Value: bson.M{"_id": bson.M{"$nin": readBookIDs}}}},
+		bson.D{{Key: "$sample", Value: bson.M{"size": limit}}},
+	})
+	if err == nil {
+		var randomBooks []models.Book
+		if err := cursor.All(context.Background(), &randomBooks); err == nil {
+			for _, b := range randomBooks {
+				if !seen[b.ID] {
+					recommendations = append(recommendations, b)
+					seen[b.ID] = true
 				}
 			}
-			cursor.Close(context.Background())
 		}
+		cursor.Close(context.Background())
 	}
+}
+
 
 	// ===== Response =====
 	w.WriteHeader(http.StatusOK)

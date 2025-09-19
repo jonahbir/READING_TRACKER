@@ -40,6 +40,7 @@ type Book struct {
 	Title                   string             `bson:"title"`
 	Author                  string             `bson:"author"`
 	ISBN                    string             `bson:"isbn"`
+	Genre                   string             `bson:"genre"`
 	Type                    string             `bson:"type"` // "hardcopy" or "softcopy"
 	PhysicalLocation        string             `bson:"physical_location"`
 	PhoneNumberOfTheHandler string             `bson:"phone_number_of_the_handler"` // if the book is hardcopy
@@ -70,6 +71,7 @@ type ReadingProgress struct {
 	ISBN        string             `bson:"isbn"`
 	ReaderID    string             `bson:"reader_id"`
 	BookID      primitive.ObjectID `bson:"book_id"`
+	BookTitle string             `bson:"book_title"`
 	PagesRead   int                `bson:"pages_read"`
 	TotalPages  int                `bson:"total_pages"`
 	Reflection  string             `bson:"reflection"`
@@ -105,4 +107,14 @@ type Reading struct {
 	StartedReading  time.Time          `bson:"started_at"`
 	AddedToProgress bool               `bson:"added_to_progess"`
 	FinishedReading time.Time          `bson:"finished_reading"`
+}
+
+
+type Badge struct {
+    ID          primitive.ObjectID `bson:"_id,omitempty"`
+    UserID      primitive.ObjectID `bson:"user_id"`
+    Name        string             `bson:"name"`
+    Description string             `bson:"description"`
+    Type        string             `bson:"type"` // "achievement", "class-tag", etc.
+    CreatedAt   time.Time          `bson:"created_at"`
 }

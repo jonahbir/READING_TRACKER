@@ -92,8 +92,12 @@ func main() {
 	router.HandleFunc("/book-update", bookHandler.UpdateBook).Methods("POST")                   // working this will help the admin to update any info related to book
 	router.HandleFunc("/delete-book", bookHandler.DeleteBook).Methods("DELETE")                 // working this will help the admin to delete a book
 	router.HandleFunc("/check-book-readers", bookHandler.CheckBookReaders).Methods("GET")       // working this will help the admin to see who are the readers of a particular book
-	router.HandleFunc("/public-reviews", socialHandler.PublicReviews).Methods("GET")   
-	router.HandleFunc("/toggle-upvote", socialHandler.ToggleUpvote).Methods("POST")     
+	// Social features routes
+	router.HandleFunc("/public-reviews", socialHandler.PublicReviews).Methods("GET")             // working this will help any user to see the public reviews. (has query param isbn)
+	router.HandleFunc("/toggle-upvote", socialHandler.ToggleUpvote).Methods("POST")            // working this will help any user to upvote or remove upvote from a review
+	router.HandleFunc("/leader-board", socialHandler.Leaderboard).Methods("GET")           // working this will show the leader board of the users.(has query param limit)-accessable to all
+	router.HandleFunc("/user-profile", socialHandler.UserProfile).Methods("GET")              
+	router.HandleFunc("/recommendations", socialHandler.GetRecommendations).Methods("GET")    
 	port := os.Getenv("PORT")
 	log.Printf("Server starting on :%s...", port)
 

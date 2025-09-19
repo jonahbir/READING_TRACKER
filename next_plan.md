@@ -47,9 +47,9 @@ Reading Tracker Next Steps
     │   ├── Approach: Query Quotes collection, random or curated selection
     │
     ├── POST /add-quote
-        ├── Purpose: Admin adds inspirational quotes
-        ├── Approach: Authenticate admin, insert into Quotes collection
-
+        ├── Purpose:adds inspirational quotes
+        ├── Approach: Authenticate user, insert into Quotes collection
+        
         Next Steps and Implementation Approach
 Completing Phase 2: Book Borrowing and Progress Tracking
 These endpoints will round out the core functionality, ensuring users can view their progress and history, and admins can manage books fully.

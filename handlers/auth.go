@@ -243,10 +243,25 @@ func (h *AuthHandler) ApproveUser(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:         time.Now(),
 	})
 	if err != nil {
-		http.Error(w, "Failed to approve user", http.StatusInternalServerError)
-		return
-	}
+			http.Error(w, "Failed to approve user", http.StatusInternalServerError)
+			return
+		}
+		
+// Assign "Beginner" badge upon approval
+	BadgeCollection := h.DB.Collection("badges")
+	_, err = BadgeCollection.InsertOne(context.Background(), models.Badge{
+		UserID:      pendingUser.ID,
+		Name:        "Beginner",
+		Description: "joined the community!",
+		Type:        "class-tag",
+		CreatedAt:   time.Now(),
+	})
 
+	
+if err != nil {
+			http.Error(w, "Failed to assign badge", http.StatusInternalServerError)
+			return
+		}
 	// Delete the pending registration after approval
 	_, err = pending.DeleteOne(context.Background(), bson.M{"email": input.Email})
 	if err != nil {

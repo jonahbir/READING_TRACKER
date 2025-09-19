@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"reading-tracker/backend/helpers"
 	"reading-tracker/backend/models"
 	"time"
 
@@ -72,6 +73,7 @@ func (h *BookHandler) AddBook(w http.ResponseWriter, r *http.Request) {
 		Title                   string `json:"title"`
 		Author                  string `json:"author"`
 		ISBN                    string `json:"isbn"`
+		Genre				   string `json:"genre"`
 		Type                    string `json:"type"`
 		PhysicalLocation        string `json:"physical_location"`
 		PhoneNumberOfTheHandler string `json:"phone_number_of_the_handler"`
@@ -119,6 +121,7 @@ func (h *BookHandler) AddBook(w http.ResponseWriter, r *http.Request) {
 		Title:                   input.Title,
 		Author:                  input.Author,
 		ISBN:                    input.ISBN,
+		Genre: 				     input.Genre,
 		Type:                    input.Type,
 		PhysicalLocation:        input.PhysicalLocation,
 		PhoneNumberOfTheHandler: input.PhoneNumberOfTheHandler,
@@ -548,7 +551,7 @@ func (h *BookHandler) ReturnBook(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"message": "Book returned successfully"})
 }
 
-// this will hep the user to update the reading progress! but check it read everything
+// this will help the user to update the reading progress! but check it read everything
 func (h *BookHandler) UpdateReadingProgress(w http.ResponseWriter, r *http.Request) {
 	// Verify JWT
 	tokenString := r.Header.Get("Authorization")
@@ -626,14 +629,19 @@ func (h *BookHandler) UpdateReadingProgress(w http.ResponseWriter, r *http.Reque
 
 	// Calculate streak (simple: increment if updated today or yesterday)
 	streakDays := 1
+	streakIncreased := false
 	if err == nil {
 		lastUpdated := progress.LastUpdated
 		today := time.Now().Truncate(24 * time.Hour)
 		yesterday := today.Add(-24 * time.Hour)
 		if lastUpdated.Truncate(24 * time.Hour).Equal(yesterday) {
 			streakDays = progress.StreakDays + 1
+			streakIncreased = true
 		} else if !lastUpdated.Truncate(24 * time.Hour).Equal(today) {
 			streakDays = 1
+			streakIncreased = true
+		} else {
+			streakDays = progress.StreakDays
 		}
 	}
 
@@ -649,6 +657,7 @@ func (h *BookHandler) UpdateReadingProgress(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "no of pages you read cannot be greater than pages of the book!", http.StatusConflict)
 		return
 	}
+
 	// Update or create progress
 	update := bson.M{
 		"$set": bson.M{
@@ -670,6 +679,11 @@ func (h *BookHandler) UpdateReadingProgress(w http.ResponseWriter, r *http.Reque
 			return
 		}
 
+		// ✅ Award points if streak increased
+		if streakIncreased {
+		  helpers.UpdateRankScore(h.DB, userID, 1)
+		}
+
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]string{"message": "Progress updated"})
 	} else {
@@ -678,6 +692,7 @@ func (h *BookHandler) UpdateReadingProgress(w http.ResponseWriter, r *http.Reque
 			UserID:         userID,
 			BookID:         book_original.ID,
 			PagesRead:      input.PagesRead,
+			BookTitle:      book_original.Title,
 			TotalPages:     book_original.TotalPages,
 			Reflection:     input.Reflection,
 			StreakDays:     streakDays,
@@ -697,6 +712,10 @@ func (h *BookHandler) UpdateReadingProgress(w http.ResponseWriter, r *http.Reque
 			http.Error(w, "Error while updating reading", http.StatusInternalServerError)
 			return
 		}
+        // just update the badge
+		helpers.UpdateUserBadgesAndClassTag(userID,h.DB)
+		// ✅ New progress starts with streak → award points
+		helpers.UpdateRankScore(h.DB, userID, 1)
 
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(map[string]string{"message": "Progress created"})
@@ -895,13 +914,7 @@ func (h *BookHandler) ApproveReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// // Update review
-	// update := bson.M{
-	// 	"$set": bson.M{
-	// 		"ai_check_status": input.Status,
-	// 		"posted":          input.Status == "approved",
-	// 	},
-	// }
+
 	save := input.Status == "approved"
 	_, err = reviews.UpdateOne(context.Background(), bson.M{"reader_id": input.ReaderID}, bson.M{
 		"$set": bson.M{
@@ -937,8 +950,14 @@ func (h *BookHandler) ApproveReview(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Failed to update reading progress", http.StatusInternalServerError)
 			return
 		}
+		// update the badge 
+		helpers.UpdateUserBadgesAndClassTag(review.UserID,h.DB)
+	// ✅ Rank score for review approval
+    helpers.UpdateRankScore(h.DB, review.UserID, 5)
 
 	}
+    // ✅ Always give rank score for finishing book (approved OR rejected)
+helpers.UpdateRankScore(h.DB, review.UserID, 10)
 
 	reading := h.DB.Collection("reading")
 

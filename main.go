@@ -12,6 +12,22 @@
   
 // i deleted so many comments i wrote over here i have to recheckeverything
 // change the filtering cratieria u use to approve review 
+// we must be able to comment on posted reviews.
+// we must be able to comment on posted qoutes 
+
+
+// next add these features 
+// . Additional Optional Backend Features
+
+// Notifications: Let users get notified when someone upvotes their review/quote, or posts a comment.
+
+// Search & Filtering: Allow searching books by author/title/genre and reviews/quotes by keywords.
+
+// Analytics: Track stats like most popular books, top contributors, average reading time, etc.
+
+// maybe admin has to search users depending on some info
+// and also a profile of a user to someone to somebody else 
+
 
 package main
 
@@ -85,8 +101,15 @@ func main() {
 	router.HandleFunc("/public-reviews", socialHandler.PublicReviews).Methods("GET")             // working this will help any user to see the public reviews. (has query param isbn)
 	router.HandleFunc("/toggle-upvote", socialHandler.ToggleUpvote).Methods("POST")            // working this will help any user to upvote or remove upvote from a review
 	router.HandleFunc("/leader-board", socialHandler.Leaderboard).Methods("GET")           // working this will show the leader board of the users.(has query param limit)-accessable to all
-	router.HandleFunc("/user-profile", socialHandler.UserProfile).Methods("GET")              
-	router.HandleFunc("/recommendations", socialHandler.GetRecommendations).Methods("GET")    
+	router.HandleFunc("/user-profile", socialHandler.UserProfile).Methods("GET")           // working this will show the profile of a user-accessable to all        
+	router.HandleFunc("/recommendations", socialHandler.GetRecommendations).Methods("GET")    // working this will give book recommendations based on the user's reading history
+	router.HandleFunc("/post-comment-review", socialHandler.PostCommentReview).Methods("POST")       
+	router.HandleFunc("/toggle-review-comment-upvote", socialHandler.ToggleCommentUpvoteReview).Methods("POST")
+	router.HandleFunc("/add-quote", socialHandler.AddCommentQuote).Methods("POST")              
+	router.HandleFunc("/toggle-quote-upvote", socialHandler.ToggleCommentUpvoteQuote).Methods("POST")
+	router.HandleFunc("/post-comment-quote", socialHandler.AddCommentQuote).Methods("POST")			  
+	router.HandleFunc("/toggle-comment-quote-upvote", socialHandler.ToggleCommentUpvoteQuote).Methods("POST")
+	// Start the server
 	port := os.Getenv("PORT")
 	log.Printf("Server starting on :%s...", port)
 

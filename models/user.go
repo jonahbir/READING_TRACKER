@@ -118,3 +118,34 @@ type Badge struct {
     Type        string             `bson:"type"` // "achievement", "class-tag", etc.
     CreatedAt   time.Time          `bson:"created_at"`
 }
+
+type Quote struct {
+    ID        primitive.ObjectID   `bson:"_id,omitempty"`
+    Text      string               `bson:"text"`
+    AuthorID  primitive.ObjectID   `bson:"author_id"`
+    CreatedAt time.Time            `bson:"created_at"`
+    Upvotes   int                  `bson:"upvotes"`
+    UpvotedBy []primitive.ObjectID `bson:"upvoted_by"`
+}
+
+type QuoteComment struct {
+    ID        primitive.ObjectID   `bson:"_id,omitempty"`
+    QuoteID   primitive.ObjectID   `bson:"quote_id"`
+    UserID    primitive.ObjectID   `bson:"user_id"`
+    Text      string               `bson:"text"`
+    CreatedAt time.Time            `bson:"created_at"`
+    Upvotes   int                  `bson:"upvotes"`
+    UpvotedBy []primitive.ObjectID `bson:"upvoted_by"`
+}
+
+
+
+type ReviewComment struct {
+	ID        primitive.ObjectID   `bson:"_id,omitempty"`
+	ReviewID  primitive.ObjectID   `bson:"review_id"`   // The review being commented on
+	UserID    primitive.ObjectID   `bson:"user_id"`     // Author of the comment
+	Text      string               `bson:"text"`        // Comment text
+	Upvotes   int                  `bson:"upvotes"`     // Number of upvotes
+	UpvotedBy []primitive.ObjectID `bson:"upvoted_by"`  // Users who upvoted this comment
+	CreatedAt time.Time            `bson:"created_at"`  // Timestamp of creation
+}

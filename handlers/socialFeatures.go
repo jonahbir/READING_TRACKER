@@ -223,6 +223,190 @@ func (h *SocialHandler) ToggleUpvote(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *SocialHandler) PostCommentReview(w http.ResponseWriter, r *http.Request) {
+	// ===== JWT Authentication =====
+	tokenString := r.Header.Get("Authorization")
+	if tokenString == "" {
+		http.Error(w, `{"error": "Missing token"}`, http.StatusUnauthorized)
+		return
+	}
+	if len(tokenString) > 7 && tokenString[:7] == "Bearer " {
+		tokenString = tokenString[7:]
+	}
+
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return []byte(os.Getenv("JWT_SECRET")), nil
+	})
+	if err != nil || !token.Valid {
+		http.Error(w, `{"error": "Invalid token"}`, http.StatusUnauthorized)
+		return
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		http.Error(w, `{"error": "Invalid token claims"}`, http.StatusUnauthorized)
+		return
+	}
+
+	userID, err := primitive.ObjectIDFromHex(claims["user_id"].(string))
+	if err != nil {
+		http.Error(w, `{"error": "Invalid user ID"}`, http.StatusBadRequest)
+		return
+	}
+
+	// ===== Parse input =====
+	var input struct {
+		ReviewID string `json:"review_id"`
+		Text     string `json:"text"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, `{"error": "Invalid input"}`, http.StatusBadRequest)
+		return
+	}
+	if input.ReviewID == "" || input.Text == "" {
+		http.Error(w, `{"error": "review_id and text are required"}`, http.StatusBadRequest)
+		return
+	}
+
+	reviewID, err := primitive.ObjectIDFromHex(input.ReviewID)
+	if err != nil {
+		http.Error(w, `{"error": "Invalid review ID"}`, http.StatusBadRequest)
+		return
+	}
+
+	// ===== Insert comment =====
+	commentsCol := h.DB.Collection("ReviewComments")
+
+	newComment := bson.M{
+		"review_id":  reviewID,
+		"user_id":    userID,
+		"text":       input.Text,
+		"upvotes":    0,
+		"upvoted_by": []primitive.ObjectID{},
+		"created_at": time.Now(),
+	}
+
+	_, err = commentsCol.InsertOne(context.Background(), newComment)
+	if err != nil {
+		http.Error(w, `{"error": "Failed to post comment"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// ===== Award points to the review author =====
+	reviewsCol := h.DB.Collection("Reviews")
+	var review models.Review
+	if err := reviewsCol.FindOne(context.Background(), bson.M{"_id": reviewID}).Decode(&review); err == nil {
+		_ = helpers.UpdateRankScore(h.DB, review.UserID, 1) // 1 point to review author
+		_ = helpers.UpdateUserBadgesAndClassTag(review.UserID, h.DB)
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message": "Comment posted successfully",
+	})
+}
+
+func (h *SocialHandler) ToggleCommentUpvoteReview(w http.ResponseWriter, r *http.Request) {
+	// ===== JWT Authentication =====
+	tokenString := r.Header.Get("Authorization")
+	if tokenString == "" {
+		http.Error(w, `{"error": "Missing token"}`, http.StatusUnauthorized)
+		return
+	}
+	if len(tokenString) > 7 && tokenString[:7] == "Bearer " {
+		tokenString = tokenString[7:]
+	}
+
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return []byte(os.Getenv("JWT_SECRET")), nil
+	})
+	if err != nil || !token.Valid {
+		http.Error(w, `{"error": "Invalid token"}`, http.StatusUnauthorized)
+		return
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		http.Error(w, `{"error": "Invalid token claims"}`, http.StatusUnauthorized)
+		return
+	}
+
+	userID, err := primitive.ObjectIDFromHex(claims["user_id"].(string))
+	if err != nil {
+		http.Error(w, `{"error": "Invalid user ID"}`, http.StatusBadRequest)
+		return
+	}
+
+	// ===== Parse input =====
+	var input struct {
+		CommentID string `json:"comment_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, `{"error": "Invalid input"}`, http.StatusBadRequest)
+		return
+	}
+
+	commentID, err := primitive.ObjectIDFromHex(input.CommentID)
+	if err != nil {
+		http.Error(w, `{"error": "Invalid comment ID"}`, http.StatusBadRequest)
+		return
+	}
+
+	commentsCol := h.DB.Collection("ReviewComments")
+
+	// ===== Fetch comment =====
+	var comment struct {
+		ID     primitive.ObjectID `bson:"_id"`
+		UserID primitive.ObjectID `bson:"user_id"`
+		Upvotes int               `bson:"upvotes"`
+		UpvotedBy []primitive.ObjectID `bson:"upvoted_by"`
+	}
+	if err := commentsCol.FindOne(context.Background(), bson.M{"_id": commentID}).Decode(&comment); err != nil {
+		http.Error(w, `{"error": "Comment not found"}`, http.StatusNotFound)
+		return
+	}
+
+	alreadyLiked := false
+	for _, id := range comment.UpvotedBy {
+		if id == userID {
+			alreadyLiked = true
+			break
+		}
+	}
+
+	var update bson.M
+	var message string
+	var scoreDelta int
+
+	if alreadyLiked {
+		update = bson.M{"$inc": bson.M{"upvotes": -1}, "$pull": bson.M{"upvoted_by": userID}}
+		message = "Comment unliked successfully"
+		scoreDelta = -1 // 1 point to comment author per upvote removed
+	} else {
+		update = bson.M{"$inc": bson.M{"upvotes": 1}, "$addToSet": bson.M{"upvoted_by": userID}}
+		message = "Comment liked successfully"
+		scoreDelta = 1 // 1 point to comment author per upvote
+	}
+
+	_, err = commentsCol.UpdateOne(context.Background(), bson.M{"_id": commentID}, update)
+	if err != nil {
+		http.Error(w, `{"error": "Failed to update comment"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// ===== Update comment author's rank score =====
+	if scoreDelta != 0 {
+		_ = helpers.UpdateRankScore(h.DB, comment.UserID, scoreDelta)
+		_ = helpers.UpdateUserBadgesAndClassTag(comment.UserID, h.DB)
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message": message,
+	})
+}
+
+
 // GET /leaderboard
 func (h *SocialHandler) Leaderboard(w http.ResponseWriter, r *http.Request) {
 	usersCol := h.DB.Collection("users")
@@ -586,5 +770,407 @@ if len(recommendations) < 8 {
 	json.NewEncoder(w).Encode(map[string]any{
 		"count":          len(recommendations),
 		"recommendations": recommendations,
+	})
+}
+
+
+func (h *SocialHandler) AddQuote(w http.ResponseWriter, r *http.Request) {
+    // ===== JWT Authentication =====
+    tokenString := r.Header.Get("Authorization")
+    if tokenString == "" {
+        http.Error(w, `{"error": "Missing token"}`, http.StatusUnauthorized)
+        return
+    }
+    if len(tokenString) > 7 && tokenString[:7] == "Bearer " {
+        tokenString = tokenString[7:]
+    }
+
+    token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+        return []byte(os.Getenv("JWT_SECRET")), nil
+    })
+    if err != nil || !token.Valid {
+        http.Error(w, `{"error": "Invalid token"}`, http.StatusUnauthorized)
+        return
+    }
+
+    claims, ok := token.Claims.(jwt.MapClaims)
+    if !ok || claims["role"] != "student" {
+        http.Error(w, `{"error": "Student access required"}`, http.StatusForbidden)
+        return
+    }
+
+    userID, err := primitive.ObjectIDFromHex(claims["user_id"].(string))
+    if err != nil {
+        http.Error(w, `{"error": "Invalid user ID"}`, http.StatusBadRequest)
+        return
+    }
+
+    // ===== Parse request body =====
+    type Input struct {
+        Text string `json:"text"`
+    }
+    var input Input
+    if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+        http.Error(w, `{"error": "Invalid input"}`, http.StatusBadRequest)
+        return
+    }
+
+    if input.Text == "" {
+        http.Error(w, `{"error": "Quote text cannot be empty"}`, http.StatusBadRequest)
+        return
+    }
+
+    // ===== Insert into Quotes collection =====
+    quotesCol := h.DB.Collection("Quotes")
+    quote := bson.M{
+        "user_id":    userID,
+        "text":       input.Text,
+        "upvotes":    0,
+        "created_at": time.Now(),
+    }
+
+    res, err := quotesCol.InsertOne(context.Background(), quote)
+    if err != nil {
+        http.Error(w, `{"error": "Failed to add quote"}`, http.StatusInternalServerError)
+        return
+    }
+
+    // ===== Update user badges & rank score =====
+    if err := helpers.UpdateUserBadgesAndClassTag(userID, h.DB); err != nil {
+        log.Printf("failed to update badges for user %s: %v", userID.Hex(), err)
+    }
+
+    // ===== Respond with the new quote ID =====
+    w.WriteHeader(http.StatusCreated)
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "message": "Quote added successfully",
+        "quote_id": res.InsertedID,
+    })
+}
+
+func (h *SocialHandler) ToggleUpvoteQuote(w http.ResponseWriter, r *http.Request) {
+    // ===== JWT Authentication =====
+    tokenString := r.Header.Get("Authorization")
+    if tokenString == "" {
+        http.Error(w, `{"error": "Missing token"}`, http.StatusUnauthorized)
+        return
+    }
+    if len(tokenString) > 7 && tokenString[:7] == "Bearer " {
+        tokenString = tokenString[7:]
+    }
+
+    token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+        return []byte(os.Getenv("JWT_SECRET")), nil
+    })
+    if err != nil || !token.Valid {
+        http.Error(w, `{"error": "Invalid token"}`, http.StatusUnauthorized)
+        return
+    }
+
+    claims, ok := token.Claims.(jwt.MapClaims)
+    if !ok {
+        http.Error(w, `{"error": "Invalid token claims"}`, http.StatusUnauthorized)
+        return
+    }
+
+    userID, err := primitive.ObjectIDFromHex(claims["user_id"].(string))
+    if err != nil {
+        http.Error(w, `{"error": "Invalid user ID"}`, http.StatusBadRequest)
+        return
+    }
+
+    // ===== Get quote ID from URL =====
+    // Assume URL pattern: /quotes/upvote?id=<quoteID>
+    quoteIDStr := r.URL.Query().Get("id")
+    if quoteIDStr == "" {
+        http.Error(w, `{"error": "Missing quote ID"}`, http.StatusBadRequest)
+        return
+    }
+
+    quoteID, err := primitive.ObjectIDFromHex(quoteIDStr)
+    if err != nil {
+        http.Error(w, `{"error": "Invalid quote ID"}`, http.StatusBadRequest)
+        return
+    }
+
+    quotesCol := h.DB.Collection("Quotes")
+
+    // ===== Find the quote =====
+    var quote struct {
+        ID        primitive.ObjectID   `bson:"_id"`
+        UserID    primitive.ObjectID   `bson:"user_id"`
+        Upvotes   int                  `bson:"upvotes"`
+        UpvotedBy []primitive.ObjectID `bson:"upvoted_by"`
+    }
+
+    err = quotesCol.FindOne(context.Background(), bson.M{"_id": quoteID}).Decode(&quote)
+    if err != nil {
+        http.Error(w, `{"error": "Quote not found"}`, http.StatusNotFound)
+        return
+    }
+
+    // ===== Toggle upvote =====
+    alreadyLiked := false
+    for _, id := range quote.UpvotedBy {
+        if id == userID {
+            alreadyLiked = true
+            break
+        }
+    }
+
+    var update bson.M
+    var message string
+    var scoreDelta int
+
+    if alreadyLiked {
+        update = bson.M{
+            "$inc":  bson.M{"upvotes": -1},
+            "$pull": bson.M{"upvoted_by": userID},
+        }
+        message = "Quote unliked successfully"
+        scoreDelta = -2
+    } else {
+        update = bson.M{
+            "$inc":      bson.M{"upvotes": 1},
+            "$addToSet": bson.M{"upvoted_by": userID},
+        }
+        message = "Quote liked successfully"
+        scoreDelta = +2
+    }
+
+    _, err = quotesCol.UpdateOne(context.Background(), bson.M{"_id": quoteID}, update)
+    if err != nil {
+        http.Error(w, `{"error": "Failed to update quote"}`, http.StatusInternalServerError)
+        return
+    }
+
+    // ===== Update author rank score =====
+    if scoreDelta != 0 {
+        _ = helpers.UpdateRankScore(h.DB, quote.UserID, scoreDelta)
+        helpers.UpdateUserBadgesAndClassTag(quote.UserID, h.DB)
+    }
+
+    // ===== Return updated quote info =====
+    err = quotesCol.FindOne(context.Background(), bson.M{"_id": quoteID}).Decode(&quote)
+    if err != nil {
+        http.Error(w, `{"error": "Failed to fetch updated quote"}`, http.StatusInternalServerError)
+        return
+    }
+
+    w.WriteHeader(http.StatusOK)
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "message": message,
+        "upvotes": quote.Upvotes,
+    })
+}
+
+
+func (h *SocialHandler) AddCommentQuote(w http.ResponseWriter, r *http.Request) {
+	// ===== JWT Authentication =====
+	tokenString := r.Header.Get("Authorization")
+	if tokenString == "" {
+		http.Error(w, `{"error": "Missing token"}`, http.StatusUnauthorized)
+		return
+	}
+	if len(tokenString) > 7 && tokenString[:7] == "Bearer " {
+		tokenString = tokenString[7:]
+	}
+
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return []byte(os.Getenv("JWT_SECRET")), nil
+	})
+	if err != nil || !token.Valid {
+		http.Error(w, `{"error": "Invalid token"}`, http.StatusUnauthorized)
+		return
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok || claims["role"] != "student" {
+		http.Error(w, `{"error": "Student access required"}`, http.StatusForbidden)
+		return
+	}
+
+	userID, err := primitive.ObjectIDFromHex(claims["user_id"].(string))
+	if err != nil {
+		http.Error(w, `{"error": "Invalid user ID"}`, http.StatusBadRequest)
+		return
+	}
+
+	// ===== Parse input from body =====
+	var input struct {
+		QuoteID string `json:"quote_id"`
+		Text    string `json:"text"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, `{"error": "Invalid input"}`, http.StatusBadRequest)
+		return
+	}
+	if input.QuoteID == "" || input.Text == "" {
+		http.Error(w, `{"error": "quote_id and text are required"}`, http.StatusBadRequest)
+		return
+	}
+
+	quoteID, err := primitive.ObjectIDFromHex(input.QuoteID)
+	if err != nil {
+		http.Error(w, `{"error": "Invalid quote ID"}`, http.StatusBadRequest)
+		return
+	}
+
+	quotesCol := h.DB.Collection("Quotes")
+	commentsCol := h.DB.Collection("QuoteComments")
+
+	// Check if the quote exists
+	var quote struct {
+		ID     primitive.ObjectID `bson:"_id"`
+		UserID primitive.ObjectID `bson:"user_id"`
+	}
+	if err := quotesCol.FindOne(context.Background(), bson.M{"_id": quoteID}).Decode(&quote); err != nil {
+		http.Error(w, `{"error": "Quote not found"}`, http.StatusNotFound)
+		return
+	}
+
+	// Insert the comment
+	comment := bson.M{
+		"quote_id":   quoteID,
+		"user_id":    userID,
+		"text":       input.Text,
+		"created_at": time.Now(),
+	}
+	_, err = commentsCol.InsertOne(context.Background(), comment)
+	if err != nil {
+		http.Error(w, `{"error": "Failed to add comment"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// Update rank score for comment author (0.5 points)
+	_ = helpers.UpdateRankScore(h.DB, userID, 1) // if using integer, you can scale 0.5*2 = 1
+
+	// Optionally: Update badges for the comment author
+	_ = helpers.UpdateUserBadgesAndClassTag(userID, h.DB)
+
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Comment added successfully",
+	})
+}
+
+
+
+func (h *SocialHandler) ToggleCommentUpvoteQuote(w http.ResponseWriter, r *http.Request) {
+	// ===== JWT Authentication =====
+	tokenString := r.Header.Get("Authorization")
+	if tokenString == "" {
+		http.Error(w, `{"error": "Missing token"}`, http.StatusUnauthorized)
+		return
+	}
+	if len(tokenString) > 7 && tokenString[:7] == "Bearer " {
+		tokenString = tokenString[7:]
+	}
+
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return []byte(os.Getenv("JWT_SECRET")), nil
+	})
+	if err != nil || !token.Valid {
+		http.Error(w, `{"error": "Invalid token"}`, http.StatusUnauthorized)
+		return
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		http.Error(w, `{"error": "Invalid token claims"}`, http.StatusUnauthorized)
+		return
+	}
+
+	userID, err := primitive.ObjectIDFromHex(claims["user_id"].(string))
+	if err != nil {
+		http.Error(w, `{"error": "Invalid user ID"}`, http.StatusBadRequest)
+		return
+	}
+
+	// ===== Parse comment ID from body =====
+	var input struct {
+		CommentID string `json:"comment_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, `{"error": "Invalid input"}`, http.StatusBadRequest)
+		return
+	}
+	if input.CommentID == "" {
+		http.Error(w, `{"error": "comment_id is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	commentID, err := primitive.ObjectIDFromHex(input.CommentID)
+	if err != nil {
+		http.Error(w, `{"error": "Invalid comment ID"}`, http.StatusBadRequest)
+		return
+	}
+
+	commentsCol := h.DB.Collection("QuoteComments")
+
+	// Fetch comment
+	var comment struct {
+		ID        primitive.ObjectID   `bson:"_id"`
+		UserID    primitive.ObjectID   `bson:"user_id"`
+		UpvotedBy []primitive.ObjectID `bson:"upvoted_by,omitempty"`
+		Upvotes   int                  `bson:"upvotes"`
+	}
+	err = commentsCol.FindOne(context.Background(), bson.M{"_id": commentID}).Decode(&comment)
+	if err != nil {
+		http.Error(w, `{"error": "Comment not found"}`, http.StatusNotFound)
+		return
+	}
+
+	alreadyLiked := false
+	for _, id := range comment.UpvotedBy {
+		if id == userID {
+			alreadyLiked = true
+			break
+		}
+	}
+
+	var update bson.M
+	var message string
+	scoreDelta := 1 // 0.5 points scaled as 1
+
+	if alreadyLiked {
+		// Remove upvote
+		update = bson.M{
+			"$inc":  bson.M{"upvotes": -1},
+			"$pull": bson.M{"upvoted_by": userID},
+		}
+		message = "Comment unliked successfully"
+		scoreDelta = -1
+	} else {
+		// Add upvote
+		update = bson.M{
+			"$inc":      bson.M{"upvotes": 1},
+			"$addToSet": bson.M{"upvoted_by": userID},
+		}
+		message = "Comment liked successfully"
+		scoreDelta = 1
+	}
+
+	_, err = commentsCol.UpdateOne(context.Background(), bson.M{"_id": commentID}, update)
+	if err != nil {
+		http.Error(w, `{"error": "Failed to update comment"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// Update rank score of comment author
+	_ = helpers.UpdateRankScore(h.DB, comment.UserID, scoreDelta)
+	_ = helpers.UpdateUserBadgesAndClassTag(comment.UserID, h.DB)
+
+	// Fetch updated comment
+	err = commentsCol.FindOne(context.Background(), bson.M{"_id": commentID}).Decode(&comment)
+	if err != nil {
+		http.Error(w, `{"error": "Failed to fetch updated comment"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message": message,
+		"upvotes": comment.Upvotes,
 	})
 }

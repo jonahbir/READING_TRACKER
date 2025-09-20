@@ -9,21 +9,10 @@
 // 8 reading progress
 // 9 submit review
 // 10 approve review
+  
+// i deleted so many comments i wrote over here i have to recheckeverything
+// change the filtering cratieria u use to approve review 
 
-// problems
-// the admin and users can't change their password and modify thier profile
-// the users are not reccomending book
-// the admin must approve it
-// the admin also must put some review of the book while reccomending a book! some kind of short review
-// the others are about the rank and others!
-// remember the rank is some kind of complex process we will
-//  count the upvotes and the number of books he read and the amount of days it take for the user to read and finish the book
-// so stop adding the rank as the user read and finish new book
-// what if the book is softcopy are you addding the book into the list of books which are under reading
-
-//if it is
-// softcopy there will be nothing called as return and the book should always be avalible weather you read it or not
-// the approve review uses the reader_id to approve what if the user submits more than one review
 package main
 
 import (

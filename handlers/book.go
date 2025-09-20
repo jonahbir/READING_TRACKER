@@ -828,6 +828,7 @@ func (h *BookHandler) SubmitReview(w http.ResponseWriter, r *http.Request) {
 		BookDeleted:   false,
 		Upvotes:       0,
 		CreatedAt:     time.Now(),
+		UpvotedBy: []primitive.ObjectID{},
 	})
 	if err != nil {
 		http.Error(w, "Failed to submit review", http.StatusInternalServerError)

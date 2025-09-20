@@ -17,6 +17,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"fmt"
 )
 
 type SocialHandler struct {
@@ -87,6 +88,7 @@ func (h *SocialHandler) PublicReviews(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]any{"reviews": results})
 }
+
 func (h *SocialHandler) ToggleUpvote(w http.ResponseWriter, r *http.Request) {
 	// ===== JWT Authentication =====
 	tokenString := r.Header.Get("Authorization")
@@ -135,14 +137,23 @@ func (h *SocialHandler) ToggleUpvote(w http.ResponseWriter, r *http.Request) {
 
 	reviewsCol := h.DB.Collection("Reviews")
 
-	// ===== Check if user already upvoted =====
+	// ===== Check if review exists =====
 	var review models.Review
-	err = reviewsCol.FindOne(context.Background(), bson.M{"_id": reviewID, "book_deleted": false}).Decode(&review)
+	err = reviewsCol.FindOne(
+		context.Background(),
+		bson.M{
+    "_id": reviewID,
+    "$or": []bson.M{
+        {"book_deleted": false},
+        {"book_deleted": bson.M{"$exists": false}},
+    },
+}).Decode(&review)
 	if err != nil {
 		http.Error(w, `{"error": "Review not found"}`, http.StatusNotFound)
 		return
 	}
 
+	// ===== Check if user already upvoted =====
 	alreadyLiked := false
 	for _, id := range review.UpvotedBy {
 		if id == userID {
@@ -154,10 +165,9 @@ func (h *SocialHandler) ToggleUpvote(w http.ResponseWriter, r *http.Request) {
 	// ===== Toggle logic =====
 	var update bson.M
 	var message string
-	var scoreDelta int // <-- track score change for review author
+	var scoreDelta int
 
 	if alreadyLiked {
-		// Remove like
 		update = bson.M{
 			"$inc":  bson.M{"upvotes": -1},
 			"$pull": bson.M{"upvoted_by": userID},
@@ -165,7 +175,6 @@ func (h *SocialHandler) ToggleUpvote(w http.ResponseWriter, r *http.Request) {
 		message = "Review unliked successfully"
 		scoreDelta = -2
 	} else {
-		// Add like
 		update = bson.M{
 			"$inc":      bson.M{"upvotes": 1},
 			"$addToSet": bson.M{"upvoted_by": userID},
@@ -174,6 +183,7 @@ func (h *SocialHandler) ToggleUpvote(w http.ResponseWriter, r *http.Request) {
 		scoreDelta = +2
 	}
 
+	// ===== Perform update =====
 	_, err = reviewsCol.UpdateOne(
 		context.Background(),
 		bson.M{
@@ -184,6 +194,7 @@ func (h *SocialHandler) ToggleUpvote(w http.ResponseWriter, r *http.Request) {
 		update,
 	)
 	if err != nil {
+		fmt.Println(err)
 		http.Error(w, `{"error": "Failed to update review"}`, http.StatusInternalServerError)
 		return
 	}
@@ -201,8 +212,9 @@ func (h *SocialHandler) ToggleUpvote(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error": "Failed to fetch updated review"}`, http.StatusInternalServerError)
 		return
 	}
-// update the bagde 
-    helpers.UpdateUserBadgesAndClassTag(review.UserID,h.DB)
+
+	// ===== Update badges/class tags =====
+	helpers.UpdateUserBadgesAndClassTag(review.UserID, h.DB)
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]any{
@@ -247,22 +259,44 @@ func (h *SocialHandler) Leaderboard(w http.ResponseWriter, r *http.Request) {
 		Badges    []string `json:"badges,omitempty"`
 	}
 
+	badgesCol := h.DB.Collection("Badges")
+	cursorBadges, err := badgesCol.Find(context.Background(), bson.M{})
+	if err != nil {
+		http.Error(w, `{"error": "Failed to fetch badges"}`, http.StatusInternalServerError)
+		return
+	}
+	defer cursorBadges.Close(context.Background())
+
+	// Map userID to badges
+	userBadges := make(map[primitive.ObjectID][]string)
+	for cursorBadges.Next(context.Background()) {
+		var badge struct {
+			UserID primitive.ObjectID `bson:"user_id"`
+			Name   string             `bson:"name"`
+		}
+		if err := cursorBadges.Decode(&badge); err != nil {
+			continue
+		}
+		userBadges[badge.UserID] = append(userBadges[badge.UserID], badge.Name)
+	}
+	// Build leaderboard
 	var leaderboard []LeaderboardUser
 	for cursor.Next(context.Background()) {
 		var user models.User
 		if err := cursor.Decode(&user); err != nil {
 			continue
 		}
-		if user.Role != "admin" { // exclude admins from leaderboard
+		if user.Role == "admin" { // exclude admins from leaderboard
 			continue
 		}
+
 		leaderboard = append(leaderboard, LeaderboardUser{
 			Name:      user.Name,
 			ReaderID:  user.ReaderID,
 			RankScore: user.RankScore,
 			BooksRead: user.BooksRead,
 			ClassTag:  user.ClassTag,
-			Badges:    nil, // If you implement a separate Badges collection, fetch here
+			Badges:     userBadges[user.ID], // attach badges
 		})
 	}
 
@@ -400,6 +434,7 @@ func (h *SocialHandler) UserProfile(w http.ResponseWriter, r *http.Request) {
 
 // GET /recommendations
 func (h *SocialHandler) GetRecommendations(w http.ResponseWriter, r *http.Request) {
+
 	// ===== Authenticate User =====
 	tokenString := r.Header.Get("Authorization")
 	if tokenString == "" {
@@ -516,10 +551,18 @@ func (h *SocialHandler) GetRecommendations(w http.ResponseWriter, r *http.Reques
 	}
 
 	// ===== 3. Fill with Random Books ===
+if readBookIDs == nil {
+	readBookIDs = []primitive.ObjectID{}
+}
+
+// ===== 3. Fill with Random Books =====
 if len(recommendations) < 8 {
 	limit := 8 - len(recommendations)
+
 	cursor, err := booksCol.Aggregate(context.Background(), mongo.Pipeline{
-		bson.D{{Key: "$match", Value: bson.M{"_id": bson.M{"$nin": readBookIDs}}}},
+		bson.D{{Key: "$match", Value: bson.M{
+			"_id": bson.M{"$nin": readBookIDs},
+		}}},
 		bson.D{{Key: "$sample", Value: bson.M{"size": limit}}},
 	})
 	if err == nil {
@@ -535,6 +578,7 @@ if len(recommendations) < 8 {
 		cursor.Close(context.Background())
 	}
 }
+
 
 
 	// ===== Response =====

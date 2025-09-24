@@ -21,6 +21,7 @@ type User struct {
 	RankScore         int                `bson:"rank_score"`
 	ClassTag          string             `bson:"class_tag"`
 	CreatedAt         time.Time          `bson:"created_at"`
+	MustChangePassword bool 			 `bson:"must_change_password"`
 }
 
 type PendingRegistration struct {
@@ -148,4 +149,15 @@ type ReviewComment struct {
 	Upvotes   int                  `bson:"upvotes"`     // Number of upvotes
 	UpvotedBy []primitive.ObjectID `bson:"upvoted_by"`  // Users who upvoted this comment
 	CreatedAt time.Time            `bson:"created_at"`  // Timestamp of creation
+}
+
+
+type Notification struct {
+	ID        primitive.ObjectID `bson:"_id,omitempty"`
+	UserID    primitive.ObjectID `bson:"user_id"`   // recipient
+	ActorID   primitive.ObjectID `bson:"actor_id"` // who triggered
+	Type      string             `bson:"type"`     // "upvote", "comment"
+	TargetID  primitive.ObjectID `bson:"target_id"`
+	Seen      bool               `bson:"seen"`
+	CreatedAt time.Time          `bson:"created_at"`
 }

@@ -81,6 +81,12 @@ func main() {
 	router.HandleFunc("/register", authHandler.Register).Methods("POST")        // working
 	router.HandleFunc("/login", authHandler.Login).Methods("POST")              //  orking
 	router.HandleFunc("/approve-user", authHandler.ApproveUser).Methods("POST") // working
+	router.HandleFunc("/bootstrap-admin", authHandler.BootstrapAdmin).Methods("POST")  // working
+	router.HandleFunc("/add-admin", authHandler.AddAdmin).Methods("POST")              //working 
+	router.HandleFunc("/change-password", authHandler.ChangePassword).Methods("POST")  // working
+
+
+
 	// Book-related routes
 	router.HandleFunc("/add-book", bookHandler.AddBook).Methods("POST")                         // working this will enable the admin to add a book
 	router.HandleFunc("/books", bookHandler.ListAllBooks).Methods("GET")                        // working  this will list all books avalailable + unavailable--- no authenticaion it works for ang body
@@ -99,16 +105,23 @@ func main() {
 	router.HandleFunc("/check-book-readers", bookHandler.CheckBookReaders).Methods("GET")       // working this will help the admin to see who are the readers of a particular book
 	// Social features routes
 	router.HandleFunc("/public-reviews", socialHandler.PublicReviews).Methods("GET")             // working this will help any user to see the public reviews. (has query param isbn)
-	router.HandleFunc("/toggle-upvote", socialHandler.ToggleUpvote).Methods("POST")            // working this will help any user to upvote or remove upvote from a review
-	router.HandleFunc("/leader-board", socialHandler.Leaderboard).Methods("GET")           // working this will show the leader board of the users.(has query param limit)-accessable to all
-	router.HandleFunc("/user-profile", socialHandler.UserProfile).Methods("GET")           // working this will show the profile of a user-accessable to all        
-	router.HandleFunc("/recommendations", socialHandler.GetRecommendations).Methods("GET")    // working this will give book recommendations based on the user's reading history
+	router.HandleFunc("/toggle-upvote", socialHandler.ToggleUpvote).Methods("POST")            			// working this will help any user to upvote or remove upvote from a review
+	router.HandleFunc("/leader-board", socialHandler.Leaderboard).Methods("GET")           			// working this will show the leader board of the users.(has query param limit)-accessable to all
+	router.HandleFunc("/user-profile", socialHandler.UserProfile).Methods("GET")           				// working this will show the profile of a user-accessable to all        
+	router.HandleFunc("/recommendations", socialHandler.GetRecommendations).Methods("GET")    			// working this will give book recommendations based on the user's reading history
 	router.HandleFunc("/post-comment-review", socialHandler.PostCommentReview).Methods("POST")       
 	router.HandleFunc("/toggle-review-comment-upvote", socialHandler.ToggleCommentUpvoteReview).Methods("POST")
 	router.HandleFunc("/add-quote", socialHandler.AddCommentQuote).Methods("POST")              
 	router.HandleFunc("/toggle-quote-upvote", socialHandler.ToggleCommentUpvoteQuote).Methods("POST")
 	router.HandleFunc("/post-comment-quote", socialHandler.AddCommentQuote).Methods("POST")			  
 	router.HandleFunc("/toggle-comment-quote-upvote", socialHandler.ToggleCommentUpvoteQuote).Methods("POST")
+	router.HandleFunc("/list-notifications", socialHandler.ListNotifications).Methods("GET")       
+	router.HandleFunc("/mark-notification-seen", socialHandler.MarkNotificationsSeen).Methods("POST")
+	router.HandleFunc("/search-books", bookHandler.SearchBooks).Methods("GET")  						// working this will help to search the book using different queries like genre title, author
+	router.HandleFunc("search-reviews", socialHandler.SearchReviews).Methods("GET")  
+	router.HandleFunc("search-quotes", socialHandler.SearchQuotes).Methods("GET")
+	router.HandleFunc("search-users", socialHandler.SearchUsers).Methods("GET")
+	router.HandleFunc("/analytics", socialHandler.Analytics).Methods("GET")  							// working it will give total analysis of things for the admin ! 
 	// Start the server
 	port := os.Getenv("PORT")
 	log.Printf("Server starting on :%s...", port)

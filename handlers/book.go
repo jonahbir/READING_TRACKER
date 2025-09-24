@@ -15,6 +15,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"golang.org/x/crypto/bcrypt"
+
 )
 
 type BookHandler struct {
@@ -1546,4 +1547,53 @@ func (h *BookHandler) DeleteBook(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{
 		"message": "Book deleted successfully; related reviews marked as orphaned",
 	})
+}
+
+// SearchBooks allows users to search books by title, author, genre, and availability
+func (h *BookHandler) SearchBooks(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+
+    title := r.URL.Query().Get("title")
+    author := r.URL.Query().Get("author")
+    genre := r.URL.Query().Get("genre")
+    available := r.URL.Query().Get("available")
+    fmt.Println(title)
+	fmt.Println(author)
+    filter := bson.M{}
+
+    if title != "" {
+        filter["title"] = bson.M{"$regex": title, "$options": "i"} // case-insensitive
+    }
+    if author != "" {
+        filter["author"] = bson.M{"$regex": author, "$options": "i"}
+    }
+    if genre != "" {
+        filter["genre"] = bson.M{"$regex": genre, "$options": "i"}
+    }
+    if available != "" {
+        if available == "true" {
+            filter["available"] = true
+        } else if available == "false" {
+            filter["available"] = false
+        }
+    }
+	fmt.Println(filter)
+	book := h.DB.Collection("books")
+    cursor, err := book.Find(context.Background(), filter)
+    if err != nil {
+        http.Error(w, `{"error":"Failed to fetch books"}`, http.StatusInternalServerError)
+        return
+    }
+    defer cursor.Close(context.Background())
+
+    var books []models.Book
+    if err := cursor.All(context.Background(), &books); err != nil {
+        http.Error(w, `{"error":"Failed to parse books"}`, http.StatusInternalServerError)
+        return
+    }
+
+    json.NewEncoder(w).Encode(map[string]any{
+        "count": len(books),
+        "books": books,
+    })
 }

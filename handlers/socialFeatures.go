@@ -162,6 +162,7 @@ func (h *SocialHandler) ToggleUpvote(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+
 	// ===== Toggle logic =====
 	var update bson.M
 	var message string
@@ -198,7 +199,17 @@ func (h *SocialHandler) ToggleUpvote(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error": "Failed to update review"}`, http.StatusInternalServerError)
 		return
 	}
-
+		// after updating upvotes in DB
+	if !alreadyLiked {
+		// notify review author
+		go helpers.CreateNotification(
+			h.DB,
+			review.UserID,   // recipient (the review's author)
+			userID,          // actor (the one upvoting)
+			review.ID,       // target (the review itself)
+			"upvote_review", // type
+		)
+	}
 	// ===== Update leaderboard score for review's author =====
 	if scoreDelta != 0 {
 		if err := helpers.UpdateRankScore(h.DB, review.UserID, scoreDelta); err != nil {
@@ -212,6 +223,9 @@ func (h *SocialHandler) ToggleUpvote(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error": "Failed to fetch updated review"}`, http.StatusInternalServerError)
 		return
 	}
+
+
+
 
 	// ===== Update badges/class tags =====
 	helpers.UpdateUserBadgesAndClassTag(review.UserID, h.DB)
@@ -291,6 +305,16 @@ func (h *SocialHandler) PostCommentReview(w http.ResponseWriter, r *http.Request
 		http.Error(w, `{"error": "Failed to post comment"}`, http.StatusInternalServerError)
 		return
 	}
+
+	// after saving the comment
+	go helpers.CreateNotification(
+		h.DB,
+		userID,     // recipient = review owner
+		userID,            // actor = commenter
+		reviewID,         // target = review
+		"comment_review",  // type
+	)
+
 
 	// ===== Award points to the review author =====
 	reviewsCol := h.DB.Collection("Reviews")
@@ -393,12 +417,23 @@ func (h *SocialHandler) ToggleCommentUpvoteReview(w http.ResponseWriter, r *http
 		http.Error(w, `{"error": "Failed to update comment"}`, http.StatusInternalServerError)
 		return
 	}
+	
 
 	// ===== Update comment author's rank score =====
 	if scoreDelta != 0 {
 		_ = helpers.UpdateRankScore(h.DB, comment.UserID, scoreDelta)
 		_ = helpers.UpdateUserBadgesAndClassTag(comment.UserID, h.DB)
 	}
+	if !alreadyLiked {
+    go helpers.CreateNotification(
+        h.DB,
+        comment.UserID,
+        userID,
+        comment.ID,
+        "upvote_comment",
+    )
+}
+
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -492,6 +527,7 @@ func (h *SocialHandler) Leaderboard(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+
 func (h *SocialHandler) UserProfile(w http.ResponseWriter, r *http.Request) {
 	// ===== JWT Authentication =====
 	tokenString := r.Header.Get("Authorization")
@@ -516,99 +552,101 @@ func (h *SocialHandler) UserProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, err := primitive.ObjectIDFromHex(claims["user_id"].(string))
+	requesterID, err := primitive.ObjectIDFromHex(claims["user_id"].(string))
 	if err != nil {
-		http.Error(w, `{"error": "Invalid user ID"}`, http.StatusBadRequest)
+		http.Error(w, `{"error": "Invalid requester ID"}`, http.StatusBadRequest)
 		return
 	}
+	requesterRole := claims["role"].(string)
 
-	// ===== Fetch User Data =====
+	// ===== Target user from query param =====
+	targetIDStr := r.URL.Query().Get("target_id")
+	var targetID primitive.ObjectID
+	if targetIDStr == "" || targetIDStr == requesterID.Hex() {
+		targetID = requesterID // self profile
+	} else {
+		targetID, err = primitive.ObjectIDFromHex(targetIDStr)
+		if err != nil {
+			http.Error(w, `{"error": "Invalid target user ID"}`, http.StatusBadRequest)
+			return
+		}
+	}
+
+	// ===== Fetch target user =====
 	usersCol := h.DB.Collection("users")
 	var user models.User
-	err = usersCol.FindOne(context.Background(), bson.M{"_id": userID, "verified": true}).Decode(&user)
+	err = usersCol.FindOne(context.Background(), bson.M{"_id": targetID, "verified": true}).Decode(&user)
 	if err != nil {
 		http.Error(w, `{"error": "User not found or not verified"}`, http.StatusNotFound)
 		return
 	}
 
-	// ===== Fetch Reading Progress =====
-	progressCol := h.DB.Collection("ReadingProgress")
-	cursor, err := progressCol.Find(context.Background(), bson.M{"user_id": userID})
-	if err != nil {
-		http.Error(w, `{"error": "Failed to fetch reading progress"}`, http.StatusInternalServerError)
-		return
-	}
+	// ===== Borrow history =====
+	borrowCol := h.DB.Collection("BorrowHistory")
+	cursor, _ := borrowCol.Find(context.Background(), bson.M{"user_id": targetID})
 	defer cursor.Close(context.Background())
 
-	var readingHistory []map[string]interface{}
+	var borrowHistory []map[string]interface{}
 	for cursor.Next(context.Background()) {
-		var progress models.ReadingProgress
-		if err := cursor.Decode(&progress); err != nil {
+		var bh models.BorrowHistory
+		if err := cursor.Decode(&bh); err != nil {
 			continue
 		}
 
-		readingHistory = append(readingHistory, map[string]interface{}{
-			"book_title":  progress.BookTitle,
-			"pages_read":  progress.PagesRead,
-			"total_pages": progress.TotalPages,
-			"completed":   progress.Completed,
-			"reflection":  progress.Reflection,
-			"started_at":  progress.StartedReading,
-			"finished_at": progress.FinishedReading,
-			"streak_days": progress.StreakDays,
+		// fetch book title
+		bookCol := h.DB.Collection("books")
+		var book models.Book
+		_ = bookCol.FindOne(context.Background(), bson.M{"_id": bh.BookID}).Decode(&book)
+
+		borrowHistory = append(borrowHistory, map[string]any{
+			"book_title":  book.Title,
+			"borrow_date": bh.BorrowDate.Format("2006-01-02"),
+			"return_date": func() string {
+				if !bh.ReturnDate.IsZero() {
+					return bh.ReturnDate.Format("2006-01-02")
+				}
+				return ""
+			}(),
+			"returned": !bh.ReturnDate.IsZero(),
 		})
 	}
 
-	// ===== Fetch Badges =====
+	// ===== Fetch badges =====
 	badgesCol := h.DB.Collection("Badges")
-	badgeCursor, err := badgesCol.Find(context.Background(), bson.M{"user_id": userID})
-	if err != nil {
-		http.Error(w, `{"error": "Failed to fetch badges"}`, http.StatusInternalServerError)
-		return
-	}
+	badgeCursor, _ := badgesCol.Find(context.Background(), bson.M{"user_id": targetID})
 	defer badgeCursor.Close(context.Background())
 
-	var badges []map[string]interface{}
+	var badges []string
 	for badgeCursor.Next(context.Background()) {
-		var badge map[string]interface{}
-		if err := badgeCursor.Decode(&badge); err != nil {
+		var b struct {
+			Name string `bson:"name"`
+		}
+		if err := badgeCursor.Decode(&b); err != nil {
 			continue
 		}
-		badges = append(badges, badge)
-	}
-	// ===== Calculate current streak =====
-	currentStreak := 0
-	if len(readingHistory) > 0 {
-		// find the latest progress by LastUpdated
-		latest := readingHistory[0]
-		for _, progress := range readingHistory {
-			if t1, ok1 := progress["last_updated"].(time.Time); ok1 {
-				if t0, ok0 := latest["last_updated"].(time.Time); ok0 {
-					if t1.After(t0) {
-						latest = progress
-					}
-				}
-			}
-		}
-		if streak, ok := latest["streak_days"].(int); ok {
-			currentStreak = streak
-		}
+		badges = append(badges, b.Name)
 	}
 
-	// ===== Construct Profile =====
+	// ===== Base profile =====
 	profile := map[string]any{
-		"name":             user.Name,
-		"reader_id":        user.ReaderID,
-		"email":            user.Email,
-		"class_tag":        user.ClassTag,
-		"books_read":       user.BooksRead,
-		"rank_score":       user.RankScore,
-		"current_streak":   currentStreak,
-		"reading_progress": readingHistory,
-		"badges":           badges,
+		"name":           user.Name,
+		"reader_id":      user.ReaderID,
+		"class_tag":      user.ClassTag,
+		"rank_score":     user.RankScore,
+		"books_read":     user.BooksRead,
+		"badges":         badges,
+		"borrow_history": borrowHistory,
 	}
 
-	// Return JSON response
+	// ===== Add sensitive info if self or admin =====
+	if requesterID == targetID || requesterRole == "admin" {
+		profile["email"] = user.Email
+		profile["dorm_number"] = user.DormNumber
+		profile["insa_batch"] = user.InsaBatch
+		profile["educational_status"] = user.EducationalStatus
+	}
+
+	// ===== Return JSON =====
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(profile)
 }
@@ -956,6 +994,16 @@ func (h *SocialHandler) ToggleUpvoteQuote(w http.ResponseWriter, r *http.Request
         http.Error(w, `{"error": "Failed to fetch updated quote"}`, http.StatusInternalServerError)
         return
     }
+	if !alreadyLiked {
+    go helpers.CreateNotification(
+        h.DB,
+        quote.UserID,
+        userID,
+        quote.ID,
+        "upvote_quote",
+    )
+}
+
 
     w.WriteHeader(http.StatusOK)
     json.NewEncoder(w).Encode(map[string]interface{}{
@@ -1047,6 +1095,15 @@ func (h *SocialHandler) AddCommentQuote(w http.ResponseWriter, r *http.Request) 
 
 	// Optionally: Update badges for the comment author
 	_ = helpers.UpdateUserBadgesAndClassTag(userID, h.DB)
+	// after saving comment
+		go helpers.CreateNotification(
+			h.DB,
+			quote.UserID,
+			userID,
+			quote.ID,
+			"comment_quote",
+		)
+
 
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]string{
@@ -1168,9 +1225,950 @@ func (h *SocialHandler) ToggleCommentUpvoteQuote(w http.ResponseWriter, r *http.
 		return
 	}
 
+	if !alreadyLiked{
+    go helpers.CreateNotification(
+        h.DB,
+        comment.UserID,
+        userID,
+        comment.ID,
+        "upvote_comment",
+    )
+}
+
+
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"message": message,
 		"upvotes": comment.Upvotes,
 	})
+}
+
+
+
+
+// GET /notifications
+func (h *SocialHandler) ListNotifications(w http.ResponseWriter, r *http.Request) {
+	// Authenticate
+	tokenString := r.Header.Get("Authorization")
+	if tokenString == "" {
+		http.Error(w, `{"error": "Missing token"}`, http.StatusUnauthorized)
+		return
+	}
+	if len(tokenString) > 7 && tokenString[:7] == "Bearer " {
+		tokenString = tokenString[7:]
+	}
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return []byte(os.Getenv("JWT_SECRET")), nil
+	})
+	if err != nil || !token.Valid {
+		http.Error(w, `{"error": "Invalid token"}`, http.StatusUnauthorized)
+		return
+	}
+	claims, _ := token.Claims.(jwt.MapClaims)
+	userID, _ := primitive.ObjectIDFromHex(claims["user_id"].(string))
+
+	notificationsCol := h.DB.Collection("Notifications")
+
+	cursor, err := notificationsCol.Find(
+		context.Background(),
+		bson.M{"user_id": userID},
+		&options.FindOptions{
+			Sort: bson.M{"created_at": -1}, // latest first
+		},
+	)
+	if err != nil {
+		http.Error(w, `{"error": "Failed to fetch notifications"}`, http.StatusInternalServerError)
+		return
+	}
+	defer cursor.Close(context.Background())
+
+	var notifications []models.Notification
+	if err := cursor.All(context.Background(), &notifications); err != nil {
+		http.Error(w, `{"error": "Failed to parse notifications"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]any{
+		"count":         len(notifications),
+		"notifications": notifications,
+	})
+}
+
+
+// POST /notifications/mark-seen
+func (h *SocialHandler) MarkNotificationsSeen(w http.ResponseWriter, r *http.Request) {
+	// Authenticate
+	tokenString := r.Header.Get("Authorization")
+	if tokenString == "" {
+		http.Error(w, `{"error": "Missing token"}`, http.StatusUnauthorized)
+		return
+	}
+	if len(tokenString) > 7 && tokenString[:7] == "Bearer " {
+		tokenString = tokenString[7:]
+	}
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return []byte(os.Getenv("JWT_SECRET")), nil
+	})
+	if err != nil || !token.Valid {
+		http.Error(w, `{"error": "Invalid token"}`, http.StatusUnauthorized)
+		return
+	}
+	claims, _ := token.Claims.(jwt.MapClaims)
+	userID, _ := primitive.ObjectIDFromHex(claims["user_id"].(string))
+
+	notificationsCol := h.DB.Collection("Notifications")
+
+	_, err = notificationsCol.UpdateMany(
+		context.Background(),
+		bson.M{"user_id": userID, "seen": false},
+		bson.M{"$set": bson.M{"seen": true}},
+	)
+	if err != nil {
+		http.Error(w, `{"error": "Failed to mark notifications"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "All notifications marked as seen",
+	})
+}
+	
+func (h *SocialHandler) SearchReviews(w http.ResponseWriter, r *http.Request) {
+    // ===== Parse query params =====
+    query := r.URL.Query().Get("query")
+    isbn := r.URL.Query().Get("isbn")
+    userIDStr := r.URL.Query().Get("user_id")
+
+    if query == "" {
+        http.Error(w, `{"error": "Query parameter is required"}`, http.StatusBadRequest)
+        return
+    }
+
+    filter := bson.M{
+        "review_text": bson.M{"$regex": query, "$options": "i"},
+        "posted":      true,
+        "ai_check_status": "approved",
+        "book_deleted": false,
+    }
+
+    // Optional filters
+    if isbn != "" {
+        booksCol := h.DB.Collection("Books")
+        var book models.Book
+        err := booksCol.FindOne(context.Background(), bson.M{"isbn": isbn}).Decode(&book)
+        if err == nil {
+            filter["book_id"] = book.ID
+        }
+    }
+
+    if userIDStr != "" {
+        userID, err := primitive.ObjectIDFromHex(userIDStr)
+        if err == nil {
+            filter["user_id"] = userID
+        }
+    }
+
+    reviewsCol := h.DB.Collection("Reviews")
+    cursor, err := reviewsCol.Find(context.Background(), filter)
+    if err != nil {
+        http.Error(w, `{"error": "Failed to search reviews"}`, http.StatusInternalServerError)
+        return
+    }
+    defer cursor.Close(context.Background())
+
+    type ReviewWithUser struct {
+        ID         primitive.ObjectID `json:"id"`
+        ReviewText string             `json:"review_text"`
+        UserName   string             `json:"user_name"`
+        ReaderID   string             `json:"reader_id"`
+        BookID     primitive.ObjectID `json:"book_id"`
+        Upvotes    int                `json:"upvotes"`
+        CreatedAt  time.Time          `json:"created_at"`
+    }
+
+    var results []ReviewWithUser
+
+    for cursor.Next(context.Background()) {
+        var rev models.Review
+        if err := cursor.Decode(&rev); err != nil {
+            continue
+        }
+
+        // Fetch user info
+        var user models.User
+        usersCol := h.DB.Collection("users")
+        _ = usersCol.FindOne(context.Background(), bson.M{"_id": rev.UserID}).Decode(&user)
+
+        results = append(results, ReviewWithUser{
+            ID:         rev.ID,
+            ReviewText: rev.ReviewText,
+            UserName:   user.Name,
+            ReaderID:   user.ReaderID,
+            BookID:     rev.BookID,
+            Upvotes:    rev.Upvotes,
+            CreatedAt:  rev.CreatedAt,
+        })
+    }
+
+    w.WriteHeader(http.StatusOK)
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "count":   len(results),
+        "reviews": results,
+    })
+}
+
+
+func (h *SocialHandler) SearchQuotes(w http.ResponseWriter, r *http.Request) {
+    // ===== Parse query params =====
+    query := r.URL.Query().Get("query")
+    userIDStr := r.URL.Query().Get("user_id")
+
+    if query == "" {
+        http.Error(w, `{"error": "Query parameter is required"}`, http.StatusBadRequest)
+        return
+    }
+
+    filter := bson.M{
+        "text": bson.M{"$regex": query, "$options": "i"},
+    }
+
+    if userIDStr != "" {
+        userID, err := primitive.ObjectIDFromHex(userIDStr)
+        if err == nil {
+            filter["user_id"] = userID
+        }
+    }
+
+    quotesCol := h.DB.Collection("Quotes")
+    cursor, err := quotesCol.Find(context.Background(), filter)
+    if err != nil {
+        http.Error(w, `{"error": "Failed to search quotes"}`, http.StatusInternalServerError)
+        return
+    }
+    defer cursor.Close(context.Background())
+
+    type QuoteWithUser struct {
+        ID        primitive.ObjectID `json:"id"`
+        Text      string             `json:"text"`
+        UserName  string             `json:"user_name"`
+        ReaderID  string             `json:"reader_id"`
+        Upvotes   int                `json:"upvotes"`
+        CreatedAt time.Time          `json:"created_at"`
+    }
+
+    var results []QuoteWithUser
+    usersCol := h.DB.Collection("users")
+
+    for cursor.Next(context.Background()) {
+        var q models.Quote
+        if err := cursor.Decode(&q); err != nil {
+            continue
+        }
+
+        // Fetch user info
+        var user models.User
+        _ = usersCol.FindOne(context.Background(), bson.M{"_id": q.AuthorID}).Decode(&user)
+
+        results = append(results, QuoteWithUser{
+            ID:        q.ID,
+            Text:      q.Text,
+            UserName:  user.Name,
+            ReaderID:  user.ReaderID,
+            Upvotes:   q.Upvotes,
+            CreatedAt: q.CreatedAt,
+        })
+    }
+
+    w.WriteHeader(http.StatusOK)
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "count":  len(results),
+        "quotes": results,
+    })
+}
+
+
+func (h *SocialHandler) SearchUsers(w http.ResponseWriter, r *http.Request) {
+    usersCol := h.DB.Collection("users")
+
+    // ===== JWT Authentication =====
+    tokenString := r.Header.Get("Authorization")
+    if tokenString == "" {
+        http.Error(w, `{"error": "Missing token"}`, http.StatusUnauthorized)
+        return
+    }
+    if len(tokenString) > 7 && tokenString[:7] == "Bearer " {
+        tokenString = tokenString[7:]
+    }
+
+    token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+        return []byte(os.Getenv("JWT_SECRET")), nil
+    })
+    if err != nil || !token.Valid {
+        http.Error(w, `{"error": "Invalid token"}`, http.StatusUnauthorized)
+        return
+    }
+
+    claims, ok := token.Claims.(jwt.MapClaims)
+    if !ok {
+        http.Error(w, `{"error": "Invalid token claims"}`, http.StatusUnauthorized)
+        return
+    }
+
+    _, err = primitive.ObjectIDFromHex(claims["user_id"].(string))
+    if err != nil {
+        http.Error(w, `{"error": "Invalid user ID"}`, http.StatusBadRequest)
+        return
+    }
+
+    userRole, _ := claims["role"].(string) // "admin" or "user"
+
+    // ===== Parse query parameters =====
+    query := r.URL.Query()
+    filter := bson.M{}
+
+    if name := query.Get("name"); name != "" {
+        filter["name"] = bson.M{"$regex": name, "$options": "i"}
+    }
+    if insa := query.Get("insa_batch"); insa != "" {
+        filter["insa_batch"] = bson.M{"$regex": insa, "$options": "i"}
+    }
+    if dorm := query.Get("dorm_number"); dorm != "" {
+        filter["dorm_number"] = bson.M{"$regex": dorm, "$options": "i"}
+    }
+
+    // ===== Role-based filtering =====
+    if userRole != "admin" {
+        filter["role"] = "user" // normal users can only see other users
+    }
+
+    cursor, err := usersCol.Find(context.Background(), filter)
+    if err != nil {
+        http.Error(w, `{"error": "Failed to search users"}`, http.StatusInternalServerError)
+        return
+    }
+    defer cursor.Close(context.Background())
+
+    type PublicUser struct {
+        Name       string `json:"name"`
+        ClassTag   string `json:"class_tag"`
+        BooksRead  int    `json:"books_read"`
+        RankScore  int    `json:"rank_score"`
+        InsaBatch  string `json:"insa_batch,omitempty"`
+        DormNumber string `json:"dorm_number,omitempty"`
+    }
+
+    var results []PublicUser
+    for cursor.Next(context.Background()) {
+        var u models.User
+        if err := cursor.Decode(&u); err != nil {
+            continue
+        }
+
+        publicUser := PublicUser{
+            Name:      u.Name,
+            ClassTag:  u.ClassTag,
+            BooksRead: u.BooksRead,
+            RankScore: u.RankScore,
+        }
+
+        // Admins see extra fields
+        if userRole == "admin" {
+            publicUser.InsaBatch = u.InsaBatch
+            publicUser.DormNumber = u.DormNumber
+        }
+
+        results = append(results, publicUser)
+    }
+
+    w.WriteHeader(http.StatusOK)
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "count": len(results),
+        "users": results,
+    })
+}
+
+
+func (h *SocialHandler) Analytics(w http.ResponseWriter, r *http.Request) {
+	// Define error response structure
+	type ErrorResponse struct {
+		Error string `json:"error"`
+	}
+
+	// Define user response structure
+	type UserResponse struct {
+		Name      string `json:"name"`
+		BooksRead int    `json:"books_read"`
+		RankScore int    `json:"rank_score"`
+		InsaBatch string `json:"insa_batch"`
+	}
+
+	// Define book response structure
+	type BookResponse struct {
+		Title  string `json:"title"`
+		Author string `json:"author"`
+		Genre  string `json:"genre"`
+		Count  int64  `json:"count"` // Borrows or completions
+	}
+
+	// Define review response structure
+	type ReviewResponse struct {
+		BookTitle  string  `json:"book_title"`
+		ReviewText string  `json:"review_text"`
+		Upvotes    int     `json:"upvotes"`
+		AIScore    float64 `json:"ai_score"`
+	}
+
+	// Define quote response structure
+	type QuoteResponse struct {
+		Text    string `json:"text"`
+		Upvotes int    `json:"upvotes"`
+	}
+
+	// Define badge distribution structure
+	type BadgeDistribution struct {
+		Type  string `json:"type"`
+		Count int64  `json:"count"`
+	}
+
+	// Define users analytics structure
+	type UsersAnalytics struct {
+		TotalUsers          int64           `json:"total_users"`
+		PendingRegistrations int64           `json:"pending_registrations"`
+		TopReadersByBooks   []UserResponse  `json:"top_readers_by_books"`
+		TopReadersByRank    []UserResponse  `json:"top_readers_by_rank"`
+	}
+
+	// Define books analytics structure
+	type BooksAnalytics struct {
+		TotalBooks                int64           `json:"total_books"`
+		PopularBooksByBorrows     []BookResponse  `json:"popular_books_by_borrows"`
+		PopularBooksByCompletions []BookResponse  `json:"popular_books_by_completions"`
+	}
+
+	// Define reading analytics structure
+	type ReadingAnalytics struct {
+		AvgReadingTimeHours float64 `json:"avg_reading_time_hours"`
+	}
+
+	// Define social analytics structure
+	type SocialAnalytics struct {
+		TotalReviews        int64            `json:"total_reviews"`
+		TotalQuotes         int64            `json:"total_quotes"`
+		TotalReviewComments int64            `json:"total_review_comments"`
+		TotalQuoteComments  int64            `json:"total_quote_comments"`
+		TopReviews          []ReviewResponse `json:"top_reviews"`
+		TopQuotes           []QuoteResponse  `json:"top_quotes"`
+	}
+
+	// Define badges analytics structure
+	type BadgesAnalytics struct {
+		TotalBadges       int64              `json:"total_badges"`
+		BadgeDistribution []BadgeDistribution `json:"badge_distribution"`
+	}
+
+	// Define analytics response structure
+	type AnalyticsResponse struct {
+		Users       UsersAnalytics   `json:"users"`
+		Books       BooksAnalytics   `json:"books"`
+		Reading     ReadingAnalytics `json:"reading"`
+		Social      SocialAnalytics  `json:"social"`
+		Badges      BadgesAnalytics  `json:"badges"`
+		GeneratedAt time.Time        `json:"generated_at"`
+	}
+
+	// Helper to send error response
+	sendError := func(w http.ResponseWriter, status int, message string) {
+		w.WriteHeader(status)
+		if err := json.NewEncoder(w).Encode(ErrorResponse{Error: message}); err != nil {
+			log.Printf("Failed to encode error response: %v", err)
+		}
+	}
+
+	tokenString := r.Header.Get("Authorization")
+
+	if tokenString == "" {
+		http.Error(w, "Missing token", http.StatusUnauthorized)
+		return
+	}
+
+	if len(tokenString) > 7 && tokenString[:7] == "Bearer " {
+		tokenString = tokenString[7:]
+	}
+
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
+		return []byte(os.Getenv("JWT_SECRET")), nil
+	})
+
+	if err != nil || !token.Valid {
+		http.Error(w, "Invalid token", http.StatusUnauthorized)
+		return
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+
+	if !ok || claims["role"] != "admin" {
+		http.Error(w, "Admin access required", http.StatusForbidden)
+		return
+	}
+
+	adminID, err := primitive.ObjectIDFromHex(claims["user_id"].(string))
+
+	if err != nil {
+		http.Error(w, "Invalid admin ID", http.StatusBadRequest)
+		return
+	}
+
+	users := h.DB.Collection("users")
+
+	var admin models.User
+
+	err = users.FindOne(context.Background(), bson.M{"_id": adminID, "role": "admin"}).Decode(&admin)
+
+	if err != nil {
+		http.Error(w, "Admin not found", http.StatusForbidden)
+		return
+	}
+	// Helper to get int64 pointer
+	int64Ptr := func(i int64) *int64 {
+		return &i
+	}
+
+	// Validate HTTP method
+	if r.Method != http.MethodGet {
+		sendError(w, http.StatusMethodNotAllowed, "Only GET requests are allowed")
+		return
+	}
+
+	// Set response content type
+	w.Header().Set("Content-Type", "application/json")
+
+	// Parse limit query parameter (default 5, max 100)
+	limit := int64(5)
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if parsedLimit, err := strconv.ParseInt(limitStr, 10, 64); err == nil && parsedLimit > 0 && parsedLimit <= 100 {
+			limit = parsedLimit
+		} else if err != nil {
+			log.Printf("Invalid limit parameter: %v", err)
+			sendError(w, http.StatusBadRequest, "Invalid limit parameter")
+			return
+		}
+	}
+
+	// Create context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	// Initialize collections
+	usersCol := h.DB.Collection("users")
+	pendingRegCol := h.DB.Collection("pending_registrations")
+	booksCol := h.DB.Collection("books")
+	borrowHistoryCol := h.DB.Collection("BorrowHistory")
+	readingProgressCol := h.DB.Collection("ReadingProgress")
+	reviewsCol := h.DB.Collection("Reviews")
+	quotesCol := h.DB.Collection("quotes")
+	reviewCommentsCol := h.DB.Collection("review_comments")
+	quoteCommentsCol := h.DB.Collection("quote_comments")
+	badgesCol := h.DB.Collection("Badges")
+
+	// ===== Users Stats =====
+	// Total users
+	totalUsers, err := usersCol.CountDocuments(ctx, bson.M{})
+	if err != nil {
+		log.Printf("Failed to count users: %v", err)
+		sendError(w, http.StatusInternalServerError, "Failed to count users")
+		return
+	}
+
+	// Total pending registrations
+	totalPending, err := pendingRegCol.CountDocuments(ctx, bson.M{})
+	if err != nil {
+		log.Printf("Failed to count pending registrations: %v", err)
+		sendError(w, http.StatusInternalServerError, "Failed to count pending registrations")
+		return
+	}
+
+	// Top readers by books read
+	topReadersByBooksCursor, err := usersCol.Find(ctx, bson.M{"role": bson.M{"$ne": "admin"}}, &options.FindOptions{
+		Sort:  bson.M{"books_read": -1},
+		Limit: int64Ptr(limit),
+	})
+	if err != nil {
+		log.Printf("Failed to fetch top readers by books: %v", err)
+		sendError(w, http.StatusInternalServerError, "Failed to fetch top readers by books")
+		return
+	}
+	defer topReadersByBooksCursor.Close(ctx)
+
+	var topReadersByBooks []UserResponse
+	for topReadersByBooksCursor.Next(ctx) {
+		var user models.User
+		if err := topReadersByBooksCursor.Decode(&user); err != nil {
+			log.Printf("Failed to decode user for top readers by books: %v", err)
+			sendError(w, http.StatusInternalServerError, "Failed to decode top readers by books")
+			return
+		}
+		topReadersByBooks = append(topReadersByBooks, UserResponse{
+			Name:      user.Name,
+			BooksRead: user.BooksRead,
+			RankScore: user.RankScore,
+			InsaBatch: user.InsaBatch,
+		})
+	}
+	if err := topReadersByBooksCursor.Err(); err != nil {
+		log.Printf("Cursor error for top readers by books: %v", err)
+		sendError(w, http.StatusInternalServerError, "Failed to fetch top readers by books")
+		return
+	}
+
+	// Top readers by rank score
+	topReadersByRankCursor, err := usersCol.Find(ctx, bson.M{"role": bson.M{"$ne": "admin"}}, &options.FindOptions{
+		Sort:  bson.M{"rank_score": -1},
+		Limit: int64Ptr(limit),
+	})
+	if err != nil {
+		log.Printf("Failed to fetch top readers by rank: %v", err)
+		sendError(w, http.StatusInternalServerError, "Failed to fetch top readers by rank")
+		return
+	}
+	defer topReadersByRankCursor.Close(ctx)
+
+	var topReadersByRank []UserResponse
+	for topReadersByRankCursor.Next(ctx) {
+		var user models.User
+		if err := topReadersByRankCursor.Decode(&user); err != nil {
+			log.Printf("Failed to decode user for top readers by rank: %v", err)
+			sendError(w, http.StatusInternalServerError, "Failed to decode top readers by rank")
+			return
+		}
+		topReadersByRank = append(topReadersByRank, UserResponse{
+			Name:      user.Name,
+			BooksRead: user.BooksRead,
+			RankScore: user.RankScore,
+			InsaBatch: user.InsaBatch,
+		})
+	}
+	if err := topReadersByRankCursor.Err(); err != nil {
+		log.Printf("Cursor error for top readers by rank: %v", err)
+		sendError(w, http.StatusInternalServerError, "Failed to fetch top readers by rank")
+		return
+	}
+
+	// ===== Books Stats =====
+	// Total books
+	totalBooks, err := booksCol.CountDocuments(ctx, bson.M{})
+	if err != nil {
+		log.Printf("Failed to count books: %v", err)
+		sendError(w, http.StatusInternalServerError, "Failed to count books")
+		return
+	}
+
+	// Popular books by borrows (from BorrowHistory)
+	borrowsPipeline := mongo.Pipeline{
+		{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: "$book_id"},
+			{Key: "count", Value: bson.D{{Key: "$sum", Value: 1}}},
+		}}},
+		{{Key: "$sort", Value: bson.D{{Key: "count", Value: -1}}}},
+		{{Key: "$limit", Value: limit}},
+		{{Key: "$lookup", Value: bson.D{
+			{Key: "from", Value: "books"},
+			{Key: "localField", Value: "_id"},
+			{Key: "foreignField", Value: "_id"},
+			{Key: "as", Value: "book"},
+		}}},
+		{{Key: "$unwind", Value: bson.D{{Key: "path", Value: "$book"}, {Key: "preserveNullAndEmptyArrays", Value: true}}}},
+	}
+	borrowsCursor, err := borrowHistoryCol.Aggregate(ctx, borrowsPipeline)
+	if err != nil {
+		log.Printf("Failed to fetch popular books by borrows: %v", err)
+		sendError(w, http.StatusInternalServerError, "Failed to fetch popular books by borrows")
+		return
+	}
+	defer borrowsCursor.Close(ctx)
+
+	var popularBooksByBorrows []struct {
+		BookID primitive.ObjectID `bson:"_id"`
+		Count  int64              `bson:"count"`
+		Book   models.Book        `bson:"book"`
+	}
+	if err := borrowsCursor.All(ctx, &popularBooksByBorrows); err != nil {
+		log.Printf("Failed to decode popular books by borrows: %v", err)
+		sendError(w, http.StatusInternalServerError, "Failed to decode popular books by borrows")
+		return
+	}
+
+	bookBorrowsResponses := make([]BookResponse, 0, len(popularBooksByBorrows))
+	for _, b := range popularBooksByBorrows {
+		bookBorrowsResponses = append(bookBorrowsResponses, BookResponse{
+			Title:  b.Book.Title,
+			Author: b.Book.Author,
+			Genre:  b.Book.Genre,
+			Count:  b.Count,
+		})
+	}
+
+	// Popular books by completions (from ReadingProgress)
+	completionsPipeline := mongo.Pipeline{
+		{{Key: "$match", Value: bson.D{{Key: "completed", Value: true}}}},
+		{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: "$book_id"},
+			{Key: "count", Value: bson.D{{Key: "$sum", Value: 1}}},
+		}}},
+		{{Key: "$sort", Value: bson.D{{Key: "count", Value: -1}}}},
+		{{Key: "$limit", Value: limit}},
+		{{Key: "$lookup", Value: bson.D{
+			{Key: "from", Value: "books"},
+			{Key: "localField", Value: "_id"},
+			{Key: "foreignField", Value: "_id"},
+			{Key: "as", Value: "book"},
+		}}},
+		{{Key: "$unwind", Value: bson.D{{Key: "path", Value: "$book"}, {Key: "preserveNullAndEmptyArrays", Value: true}}}},
+	}
+	completionsCursor, err := readingProgressCol.Aggregate(ctx, completionsPipeline)
+	if err != nil {
+		log.Printf("Failed to fetch popular books by completions: %v", err)
+		sendError(w, http.StatusInternalServerError, "Failed to fetch popular books by completions")
+		return
+	}
+	defer completionsCursor.Close(ctx)
+
+	var popularBooksByCompletions []struct {
+		BookID primitive.ObjectID `bson:"_id"`
+		Count  int64              `bson:"count"`
+		Book   models.Book        `bson:"book"`
+	}
+	if err := completionsCursor.All(ctx, &popularBooksByCompletions); err != nil {
+		log.Printf("Failed to decode popular books by completions: %v", err)
+		sendError(w, http.StatusInternalServerError, "Failed to decode popular books by completions")
+		return
+	}
+
+	bookCompletionsResponses := make([]BookResponse, 0, len(popularBooksByCompletions))
+	for _, b := range popularBooksByCompletions {
+		bookCompletionsResponses = append(bookCompletionsResponses, BookResponse{
+			Title:  b.Book.Title,
+			Author: b.Book.Author,
+			Genre:  b.Book.Genre,
+			Count:  b.Count,
+		})
+	}
+
+	// ===== Reading Stats =====
+	avgReadingPipeline := mongo.Pipeline{
+		{{Key: "$match", Value: bson.D{{Key: "completed", Value: true}}}},
+		{{Key: "$project", Value: bson.D{
+			{Key: "readingTime", Value: bson.D{
+				{Key: "$divide", Value: []interface{}{
+					bson.D{{Key: "$subtract", Value: []interface{}{"$finished_reading", "$started_at"}}},
+					1000 * 60 * 60, // milliseconds -> hours
+				}},
+			}},
+		}}},
+		{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: nil},
+			{Key: "avgTimeHours", Value: bson.D{{Key: "$avg", Value: "$readingTime"}}},
+		}}},
+	}
+	avgCursor, err := readingProgressCol.Aggregate(ctx, avgReadingPipeline)
+	if err != nil {
+		log.Printf("Failed to calculate average reading time: %v", err)
+		sendError(w, http.StatusInternalServerError, "Failed to calculate average reading time")
+		return
+	}
+	defer avgCursor.Close(ctx)
+
+	var avgRes []struct {
+		AvgTimeHours float64 `bson:"avgTimeHours"`
+	}
+	if err := avgCursor.All(ctx, &avgRes); err != nil {
+		log.Printf("Failed to decode average reading time: %v", err)
+		sendError(w, http.StatusInternalServerError, "Failed to decode average reading time")
+		return
+	}
+	avgReadingTime := 0.0
+	if len(avgRes) > 0 {
+		avgReadingTime = avgRes[0].AvgTimeHours
+	}
+
+	// ===== Social Stats =====
+	// Total reviews
+	totalReviews, err := reviewsCol.CountDocuments(ctx, bson.M{"posted": true})
+	if err != nil {
+		log.Printf("Failed to count reviews: %v", err)
+		sendError(w, http.StatusInternalServerError, "Failed to count reviews")
+		return
+	}
+
+	// Total quotes
+	totalQuotes, err := quotesCol.CountDocuments(ctx, bson.M{})
+	if err != nil {
+		log.Printf("Failed to count quotes: %v", err)
+		sendError(w, http.StatusInternalServerError, "Failed to count quotes")
+		return
+	}
+
+	// Total review comments
+	totalReviewComments, err := reviewCommentsCol.CountDocuments(ctx, bson.M{})
+	if err != nil {
+		log.Printf("Failed to count review comments: %v", err)
+		sendError(w, http.StatusInternalServerError, "Failed to count review comments")
+		return
+	}
+
+	// Total quote comments
+	totalQuoteComments, err := quoteCommentsCol.CountDocuments(ctx, bson.M{})
+	if err != nil {
+		log.Printf("Failed to count quote comments: %v", err)
+		sendError(w, http.StatusInternalServerError, "Failed to count quote comments")
+		return
+	}
+
+	// Top reviews by upvotes with book title
+	reviewsPipeline := mongo.Pipeline{
+		{{Key: "$match", Value: bson.D{{Key: "posted", Value: true}}}},
+		{{Key: "$sort", Value: bson.D{{Key: "upvotes", Value: -1}}}},
+		{{Key: "$limit", Value: limit}},
+		{{Key: "$lookup", Value: bson.D{
+			{Key: "from", Value: "books"},
+			{Key: "localField", Value: "book_id"},
+			{Key: "foreignField", Value: "_id"},
+			{Key: "as", Value: "book"},
+		}}},
+		{{Key: "$unwind", Value: bson.D{{Key: "path", Value: "$book"}, {Key: "preserveNullAndEmptyArrays", Value: true}}}},
+	}
+	topReviewsCursor, err := reviewsCol.Aggregate(ctx, reviewsPipeline)
+	if err != nil {
+		log.Printf("Failed to fetch top reviews: %v", err)
+		sendError(w, http.StatusInternalServerError, "Failed to fetch top reviews")
+		return
+	}
+	defer topReviewsCursor.Close(ctx)
+
+	var topReviews []struct {
+		ReviewText string       `bson:"review_text"`
+		AIScore    float64      `bson:"ai_score"`
+		Upvotes    int          `bson:"upvotes"`
+		Book       models.Book  `bson:"book"`
+	}
+	if err := topReviewsCursor.All(ctx, &topReviews); err != nil {
+		log.Printf("Failed to decode top reviews: %v", err)
+		sendError(w, http.StatusInternalServerError, "Failed to decode top reviews")
+		return
+	}
+
+	reviewResponses := make([]ReviewResponse, 0, len(topReviews))
+	for _, r := range topReviews {
+		bookTitle := "Unknown"
+		if r.Book.ID != primitive.NilObjectID {
+			bookTitle = r.Book.Title
+		}
+		reviewResponses = append(reviewResponses, ReviewResponse{
+			BookTitle:  bookTitle,
+			ReviewText: r.ReviewText,
+			AIScore:    r.AIScore,
+			Upvotes:    r.Upvotes,
+		})
+	}
+
+	// Top quotes by upvotes
+	topQuotesCursor, err := quotesCol.Find(ctx, bson.M{}, &options.FindOptions{
+		Sort:  bson.M{"upvotes": -1},
+		Limit: int64Ptr(limit),
+	})
+	if err != nil {
+		log.Printf("Failed to fetch top quotes: %v", err)
+		sendError(w, http.StatusInternalServerError, "Failed to fetch top quotes")
+		return
+	}
+	defer topQuotesCursor.Close(ctx)
+
+	var topQuotes []QuoteResponse
+	for topQuotesCursor.Next(ctx) {
+		var quote models.Quote
+		if err := topQuotesCursor.Decode(&quote); err != nil {
+			log.Printf("Failed to decode quote: %v", err)
+			sendError(w, http.StatusInternalServerError, "Failed to decode top quotes")
+			return
+		}
+		topQuotes = append(topQuotes, QuoteResponse{
+			Text:    quote.Text,
+			Upvotes: quote.Upvotes,
+		})
+	}
+	if err := topQuotesCursor.Err(); err != nil {
+		log.Printf("Cursor error for top quotes: %v", err)
+		sendError(w, http.StatusInternalServerError, "Failed to fetch top quotes")
+		return
+	}
+
+	// ===== Badges Stats =====
+	// Total badges
+	totalBadges, err := badgesCol.CountDocuments(ctx, bson.M{})
+	if err != nil {
+		log.Printf("Failed to count badges: %v", err)
+		sendError(w, http.StatusInternalServerError, "Failed to count badges")
+		return
+	}
+
+	// Badge distribution by type
+	badgePipeline := mongo.Pipeline{
+		{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: "$type"},
+			{Key: "count", Value: bson.D{{Key: "$sum", Value: 1}}},
+		}}},
+		{{Key: "$sort", Value: bson.D{{Key: "count", Value: -1}}}},
+	}
+	badgeCursor, err := badgesCol.Aggregate(ctx, badgePipeline)
+	if err != nil {
+		log.Printf("Failed to fetch badge distribution: %v", err)
+		sendError(w, http.StatusInternalServerError, "Failed to fetch badge distribution")
+		return
+	}
+	defer badgeCursor.Close(ctx)
+
+	var badgeDistribution []BadgeDistribution
+	if err := badgeCursor.All(ctx, &badgeDistribution); err != nil {
+		log.Printf("Failed to decode badge distribution: %v", err)
+		sendError(w, http.StatusInternalServerError, "Failed to decode badge distribution")
+		return
+	}
+
+	// ===== Return analytics =====
+	response := AnalyticsResponse{
+		Users: UsersAnalytics{
+			TotalUsers:          totalUsers,
+			PendingRegistrations: totalPending,
+			TopReadersByBooks:   topReadersByBooks,
+			TopReadersByRank:    topReadersByRank,
+		},
+		Books: BooksAnalytics{
+			TotalBooks:                totalBooks,
+			PopularBooksByBorrows:     bookBorrowsResponses,
+			PopularBooksByCompletions: bookCompletionsResponses,
+		},
+		Reading: ReadingAnalytics{
+			AvgReadingTimeHours: avgReadingTime,
+		},
+		Social: SocialAnalytics{
+			TotalReviews:        totalReviews,
+			TotalQuotes:         totalQuotes,
+			TotalReviewComments: totalReviewComments,
+			TotalQuoteComments:  totalQuoteComments,
+			TopReviews:          reviewResponses,
+			TopQuotes:           topQuotes,
+		},
+		Badges: BadgesAnalytics{
+			TotalBadges:       totalBadges,
+			BadgeDistribution: badgeDistribution,
+		},
+		GeneratedAt: time.Now(),
+	}
+
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("Failed to encode response: %v", err)
+		sendError(w, http.StatusInternalServerError, "Failed to encode response")
+		return
+	}
 }

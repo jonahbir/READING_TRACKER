@@ -14,6 +14,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"golang.org/x/crypto/bcrypt"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 
     "strconv"
 )
@@ -22,6 +23,148 @@ import (
 type AuthHandler struct {
 	DB *mongo.Database
 }
+
+// In your AuthHandler
+
+func (h *AuthHandler) BootstrapAdmin(w http.ResponseWriter, r *http.Request) {
+	// Parse request
+	var req struct {
+		Name     string `json:"name"`
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error": "Invalid request"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Check if any admin already exists
+	usersCol := h.DB.Collection("users")
+	count, err := usersCol.CountDocuments(context.Background(), bson.M{"role": "admin"})
+	if err != nil {
+		http.Error(w, `{"error": "Database error"}`, http.StatusInternalServerError)
+		return
+	}
+	if count > 0 {
+		http.Error(w, `{"error": "Admin already exists"}`, http.StatusForbidden)
+		return
+	}
+
+	// Hash password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		http.Error(w, `{"error": "Failed to hash password"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// Create new admin
+	newAdmin := models.User{
+		Name:              req.Name,
+		Email:             req.Email,
+		Password:          string(hashedPassword),
+		Role:              "admin",
+		Verified:          true,
+		MustChangePassword: false, // First admin can log in directly
+		CreatedAt:         time.Now(),
+	}
+
+	_, err = usersCol.InsertOne(context.Background(), newAdmin)
+	if err != nil {
+		http.Error(w, `{"error": "Failed to create admin"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Bootstrap admin created successfully",
+		"admin_id": newAdmin.ID.Hex(),
+	})
+}
+
+
+// In your AuthHandler
+func (h *AuthHandler) AddAdmin(w http.ResponseWriter, r *http.Request) {
+	// ===== JWT Authentication =====
+	tokenString := r.Header.Get("Authorization")
+	if len(tokenString) > 7 && tokenString[:7] == "Bearer " {
+		tokenString = tokenString[7:]
+	}
+
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return []byte(os.Getenv("JWT_SECRET")), nil
+	})
+	if err != nil || !token.Valid {
+		http.Error(w, `{"error": "Invalid token"}`, http.StatusUnauthorized)
+		return
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		http.Error(w, `{"error": "Invalid token claims"}`, http.StatusUnauthorized)
+		return
+	}
+
+	requesterID, err := primitive.ObjectIDFromHex(claims["user_id"].(string))
+	if err != nil {
+		http.Error(w, `{"error": "Invalid user ID"}`, http.StatusBadRequest)
+		return
+	}
+
+	// ===== Check if requester is admin =====
+	usersCol := h.DB.Collection("users")
+	var requester models.User
+	if err := usersCol.FindOne(context.Background(), bson.M{"_id": requesterID}).Decode(&requester); err != nil {
+		http.Error(w, `{"error": "Requester not found"}`, http.StatusUnauthorized)
+		return
+	}
+	if requester.Role != "admin" {
+		http.Error(w, `{"error": "Only admins can add another admin"}`, http.StatusForbidden)
+		return
+	}
+
+	// ===== Parse new admin info =====
+	var req struct {
+		Name     string `json:"name"`
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error": "Invalid request"}`, http.StatusBadRequest)
+		return
+	}
+
+	// ===== Hash password =====
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		http.Error(w, `{"error": "Failed to hash password"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// ===== Create new admin =====
+	newAdmin := models.User{
+		Name:      req.Name,
+		Email:     req.Email,
+		Password:  string(hashedPassword),
+		Role:      "admin",
+		Verified:  true,
+		CreatedAt: time.Now(),
+		MustChangePassword: true,
+	}
+
+	_, err = usersCol.InsertOne(context.Background(), newAdmin)
+	if err != nil {
+		http.Error(w, `{"error": "Failed to create admin"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]string{
+		"message":  "Admin created successfully",
+		"admin_id": newAdmin.ID.Hex(),
+	})
+}
+
+
 
 // Register function handles new user registration
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
@@ -241,6 +384,7 @@ func (h *AuthHandler) ApproveUser(w http.ResponseWriter, r *http.Request) {
 		RankScore:         0,
 		ClassTag:          "beginner",
 		CreatedAt:         time.Now(),
+		MustChangePassword: false, 
 	})
 	if err != nil {
 			http.Error(w, "Failed to approve user", http.StatusInternalServerError)
@@ -272,4 +416,86 @@ if err != nil {
 	// Send success response to client
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "User approved"})
+}
+
+
+func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	// ===== JWT Authentication =====
+	tokenString := r.Header.Get("Authorization")
+	if tokenString == "" {
+		http.Error(w, `{"error": "Missing token"}`, http.StatusUnauthorized)
+		return
+	}
+	if len(tokenString) > 7 && tokenString[:7] == "Bearer " {
+		tokenString = tokenString[7:]
+	}
+
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return []byte(os.Getenv("JWT_SECRET")), nil
+	})
+	if err != nil || !token.Valid {
+		http.Error(w, `{"error": "Invalid token"}`, http.StatusUnauthorized)
+		return
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		http.Error(w, `{"error": "Invalid token claims"}`, http.StatusUnauthorized)
+		return
+	}
+
+	userID, err := primitive.ObjectIDFromHex(claims["user_id"].(string))
+	if err != nil {
+		http.Error(w, `{"error": "Invalid user ID"}`, http.StatusBadRequest)
+		return
+	}
+
+	// ===== Parse input =====
+	var req struct {
+		CurrentPassword string `json:"current_password"`
+		NewPassword     string `json:"new_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error": "Invalid input"}`, http.StatusBadRequest)
+		return
+	}
+
+	usersCol := h.DB.Collection("users")
+
+	// ===== Fetch user =====
+	var user models.User
+	err = usersCol.FindOne(context.Background(), bson.M{"_id": userID}).Decode(&user)
+	if err != nil {
+		http.Error(w, `{"error": "User not found"}`, http.StatusNotFound)
+		return
+	}
+
+	// ===== Verify current password =====
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.CurrentPassword)); err != nil {
+		http.Error(w, `{"error": "Current password is incorrect"}`, http.StatusUnauthorized)
+		return
+	}
+
+	// ===== Hash new password =====
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		http.Error(w, `{"error": "Failed to hash password"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// ===== Update password =====
+	_, err = usersCol.UpdateOne(
+		context.Background(),
+		bson.M{"_id": userID},
+		bson.M{"$set": bson.M{"password": string(hashedPassword)}},
+	)
+	if err != nil {
+		http.Error(w, `{"error": "Failed to update password"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Password changed successfully",
+	})
 }

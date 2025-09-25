@@ -1341,10 +1341,7 @@ func (h *SocialHandler) SearchReviews(w http.ResponseWriter, r *http.Request) {
     isbn := r.URL.Query().Get("isbn")
     userIDStr := r.URL.Query().Get("user_id")
 
-    if query == "" {
-        http.Error(w, `{"error": "Query parameter is required"}`, http.StatusBadRequest)
-        return
-    }
+   
 
     filter := bson.M{
         "review_text": bson.M{"$regex": query, "$options": "i"},
@@ -1425,10 +1422,7 @@ func (h *SocialHandler) SearchQuotes(w http.ResponseWriter, r *http.Request) {
     query := r.URL.Query().Get("query")
     userIDStr := r.URL.Query().Get("user_id")
 
-    if query == "" {
-        http.Error(w, `{"error": "Query parameter is required"}`, http.StatusBadRequest)
-        return
-    }
+  
 
     filter := bson.M{
         "text": bson.M{"$regex": query, "$options": "i"},
@@ -1540,7 +1534,7 @@ func (h *SocialHandler) SearchUsers(w http.ResponseWriter, r *http.Request) {
 
     // ===== Role-based filtering =====
     if userRole != "admin" {
-        filter["role"] = "user" // normal users can only see other users
+        filter["role"] = "student" // normal users can only see other users
     }
 
     cursor, err := usersCol.Find(context.Background(), filter)
@@ -1580,7 +1574,10 @@ func (h *SocialHandler) SearchUsers(w http.ResponseWriter, r *http.Request) {
         }
 
         results = append(results, publicUser)
+		
     }
+
+	
 
     w.WriteHeader(http.StatusOK)
     json.NewEncoder(w).Encode(map[string]interface{}{

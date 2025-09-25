@@ -9,6 +9,7 @@ import (
 
 	"reading-tracker/backend/models"
 
+	"reading-tracker/backend/helpers"
 	"github.com/golang-jwt/jwt/v5"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -256,6 +257,14 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to register", http.StatusInternalServerError)
 		return
 	}
+
+	adminsCursor, _ := h.DB.Collection("users").Find(context.Background(), bson.M{"role": "admin"})
+for adminsCursor.Next(context.Background()) {
+    var admin models.User
+    _ = adminsCursor.Decode(&admin)
+    helpers.CreateNotification(h.DB, admin.ID, primitive.NilObjectID, primitive.NilObjectID, "pending_registration")
+}
+
 
 	// Send response to user indicating pending approval
 	w.WriteHeader(http.StatusCreated)

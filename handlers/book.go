@@ -333,6 +333,16 @@ func (h *BookHandler) BorrowBook(w http.ResponseWriter, r *http.Request) {
 		"started_at":       time.Now(),
 		"added_to_reading": false,
 	})
+
+	// Notify all admins about the borrowed book
+adminsCursor, _ := h.DB.Collection("users").Find(context.Background(), bson.M{"role": "admin"})
+for adminsCursor.Next(context.Background()) {
+    var admin models.User
+    _ = adminsCursor.Decode(&admin)
+    // actorID is the student who borrowed, targetID is the book ID
+    helpers.CreateNotification(h.DB, admin.ID, studentID, book.ID, "book_borrowed")
+}
+
 	if err != nil {
 		http.Error(w, "failed to record reading", http.StatusInternalServerError)
 		return
@@ -818,7 +828,7 @@ func (h *BookHandler) SubmitReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create review
-	_, err = reviews.InsertOne(context.Background(), models.Review{
+	res, err := reviews.InsertOne(context.Background(), models.Review{
 		BookID:        book.ID,
 		UserID:        userID,
 		ReaderID:      user.ReaderID,
@@ -831,6 +841,17 @@ func (h *BookHandler) SubmitReview(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:     time.Now(),
 		UpvotedBy: []primitive.ObjectID{},
 	})
+	reviewID := res.InsertedID.(primitive.ObjectID)
+
+// Notify all admins about the new review submission
+adminsCursor, _ := h.DB.Collection("users").Find(context.Background(), bson.M{"role": "admin"})
+for adminsCursor.Next(context.Background()) {
+    var admin models.User
+    _ = adminsCursor.Decode(&admin)
+    // actorID is the student who submitted, targetID is the new review ID
+    helpers.CreateNotification(h.DB, admin.ID, userID, reviewID, "new_review")
+}
+
 	if err != nil {
 		http.Error(w, "Failed to submit review", http.StatusInternalServerError)
 		return
@@ -841,9 +862,8 @@ func (h *BookHandler) SubmitReview(w http.ResponseWriter, r *http.Request) {
 }
 
 // this will approv the book review by the admin
-
 func (h *BookHandler) ApproveReview(w http.ResponseWriter, r *http.Request) {
-	// Verify JWT
+	// ===== JWT Auth =====
 	tokenString := r.Header.Get("Authorization")
 	if tokenString == "" {
 		http.Error(w, "Missing token", http.StatusUnauthorized)
@@ -866,25 +886,17 @@ func (h *BookHandler) ApproveReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get admin_id from JWT
-	adminID, err := primitive.ObjectIDFromHex(claims["user_id"].(string))
-	if err != nil {
-		http.Error(w, "Invalid admin ID", http.StatusBadRequest)
-		return
-	}
-
-	// Check admin exists
-	users := h.DB.Collection("users")
+	adminID, _ := primitive.ObjectIDFromHex(claims["user_id"].(string))
+	usersCol := h.DB.Collection("users")
 	var admin models.User
-	err = users.FindOne(context.Background(), bson.M{"_id": adminID, "role": "admin"}).Decode(&admin)
-	if err != nil {
+	if err := usersCol.FindOne(context.Background(), bson.M{"_id": adminID, "role": "admin"}).Decode(&admin); err != nil {
 		http.Error(w, "Admin not found", http.StatusForbidden)
 		return
 	}
 
-	// Parse request body
+	// ===== Parse input =====
 	var input struct {
-		ReaderID string `json:"reader_id"`
+		ReviewID string `json:"review_id"`
 		Status   string `json:"status"` // "approved" or "rejected"
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -892,33 +904,31 @@ func (h *BookHandler) ApproveReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate input
-	if input.ReaderID == "" {
-		http.Error(w, "Invalid review ID or status1", http.StatusBadRequest)
+	if input.ReviewID == "" || (input.Status != "approved" && input.Status != "rejected") {
+		http.Error(w, "Invalid review ID or status", http.StatusBadRequest)
 		return
 	}
 
-	// Validate input
-	if input.Status != "approved" && input.Status != "rejected" {
-		http.Error(w, "Invalid review ID or status2", http.StatusBadRequest)
+	reviewID, err := primitive.ObjectIDFromHex(input.ReviewID)
+	if err != nil {
+		http.Error(w, "Invalid review ID format", http.StatusBadRequest)
 		return
 	}
-	// Find review
-	reviews := h.DB.Collection("Reviews")
+
+	reviewsCol := h.DB.Collection("Reviews")
 	var review models.Review
-	err = reviews.FindOne(context.Background(), bson.M{
-		"reader_id":       input.ReaderID,
-		"book_deleted":    false,
+	if err := reviewsCol.FindOne(context.Background(), bson.M{
+		"_id":           reviewID,
+		"book_deleted":  false,
 		"ai_check_status": "pending",
-	}).Decode(&review)
-	if err != nil {
+	}).Decode(&review); err != nil {
 		http.Error(w, "Review not found or not pending", http.StatusNotFound)
 		return
 	}
 
-
+	// ===== Update review =====
 	save := input.Status == "approved"
-	_, err = reviews.UpdateOne(context.Background(), bson.M{"reader_id": input.ReaderID}, bson.M{
+	_, err = reviewsCol.UpdateOne(context.Background(), bson.M{"_id": reviewID}, bson.M{
 		"$set": bson.M{
 			"ai_check_status": input.Status,
 			"posted":          save,
@@ -929,52 +939,75 @@ func (h *BookHandler) ApproveReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If approved, update user stats and mark progress as completed
+	// ===== Update user stats if approved =====
 	if input.Status == "approved" {
-		_, err = users.UpdateOne(context.Background(), bson.M{"_id": review.UserID}, bson.M{
-			"$inc": bson.M{
-				"books_read": 1,
-			},
+		_, _ = usersCol.UpdateOne(context.Background(), bson.M{"_id": review.UserID}, bson.M{
+			"$inc": bson.M{"books_read": 1},
 		})
-		if err != nil {
-			http.Error(w, "Failed to update user stats", http.StatusInternalServerError)
-			return
-		}
-
-		_, err := h.DB.Collection("ReadingProgress").UpdateOne(
-			context.Background(),
-			bson.M{"user_id": review.UserID, "book_id": review.BookID},
-			bson.M{"$set": bson.M{"completed": true, "finished_reading": time.Now()}},
-		)
-
-		if err != nil {
-
-			http.Error(w, "Failed to update reading progress", http.StatusInternalServerError)
-			return
-		}
-		// update the badge 
-		helpers.UpdateUserBadgesAndClassTag(review.UserID,h.DB)
-	// ✅ Rank score for review approval
-    helpers.UpdateRankScore(h.DB, review.UserID, 5)
-
 	}
-    // ✅ Always give rank score for finishing book (approved OR rejected)
-helpers.UpdateRankScore(h.DB, review.UserID, 10)
+booksCol := h.DB.Collection("books")
+var book models.Book
+err = booksCol.FindOne(context.Background(), bson.M{"_id": review.BookID}).Decode(&book)
+if err != nil {
+    http.Error(w, "Book not found", http.StatusInternalServerError)
+    return
+}
 
-	reading := h.DB.Collection("reading")
+progressCol := h.DB.Collection("ReadingProgress")
+res, err := progressCol.UpdateOne(context.Background(), bson.M{
+    "user_id": review.UserID,
+    "book_id": review.BookID,
+}, bson.M{
+    "$set": bson.M{
+        "completed":       input.Status == "approved",
+        "pages_read":      book.TotalPages,
+        "total_pages":     book.TotalPages,
+        "finished_reading": time.Now(),
+        "last_updated":    time.Now(),
+        "isbn":            book.ISBN,
+        "book_title":      book.Title,
+        "reader_id":       review.ReaderID,
+    },
+})
+if err != nil {
+    http.Error(w, "Failed to update reading progress", http.StatusInternalServerError)
+    return
+}
 
-	_, err = reading.UpdateOne(context.Background(), bson.M{"book_id": review.BookID}, bson.M{
-		"$set": bson.M{
-			"finished_reading": time.Now(),
-		}})
+// If no reading progress exists yet, create it
+if res.MatchedCount == 0 {
+    _, err := progressCol.InsertOne(context.Background(), models.ReadingProgress{
+        UserID:         review.UserID,
+        BookID:         review.BookID,
+        ISBN:           book.ISBN,
+        ReaderID:       review.ReaderID,
+        BookTitle:      book.Title,
+        PagesRead:      book.TotalPages,
+        TotalPages:     book.TotalPages,
+        Completed:      input.Status == "approved",
+        StartedReading: time.Now(),
+        FinishedReading: time.Now(),
+        LastUpdated:    time.Now(),
+    })
+    if err != nil {
+        http.Error(w, "Failed to create reading progress", http.StatusInternalServerError)
+        return
+    }
+}
 
-	if err != nil {
-		http.Error(w, "couldn't find the book in reading", http.StatusNotFound)
-		return
+
+	// ===== Update badges & rank =====
+	if input.Status == "approved" {
+		helpers.UpdateUserBadgesAndClassTag(review.UserID, h.DB)
+		helpers.UpdateRankScore(h.DB, review.UserID, 5)
 	}
+	// Always give rank for finishing book
+	helpers.UpdateRankScore(h.DB, review.UserID, 10)
 
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"message": "Review " + input.Status})
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Review " + input.Status,
+	})
 }
 
 // now we are going to build another end point user-reading-progress

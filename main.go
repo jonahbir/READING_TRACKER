@@ -1,32 +1,4 @@
-// what is done so far ?
-// 1 register
-// 2 login -both admin and user
-// 3 approve user
-// 4 add book
-// 5 books
-// 6 borrow books
-// 7 return book
-// 8 reading progress
-// 9 submit review
-// 10 approve review
-  
-// i deleted so many comments i wrote over here i have to recheckeverything
-// change the filtering cratieria u use to approve review 
-// we must be able to comment on posted reviews.
-// we must be able to comment on posted qoutes 
 
-
-// next add these features 
-// . Additional Optional Backend Features
-
-// Notifications: Let users get notified when someone upvotes their review/quote, or posts a comment.
-
-// Search & Filtering: Allow searching books by author/title/genre and reviews/quotes by keywords.
-
-// Analytics: Track stats like most popular books, top contributors, average reading time, etc.
-
-// maybe admin has to search users depending on some info
-// and also a profile of a user to someone to somebody else 
 
 
 package main
@@ -79,7 +51,7 @@ func main() {
 
 	// Authentication-related routes
 	router.HandleFunc("/register", authHandler.Register).Methods("POST")        // working
-	router.HandleFunc("/login", authHandler.Login).Methods("POST")              //  orking
+	router.HandleFunc("/login", authHandler.Login).Methods("POST")              //  working
 	router.HandleFunc("/approve-user", authHandler.ApproveUser).Methods("POST") // working
 	router.HandleFunc("/bootstrap-admin", authHandler.BootstrapAdmin).Methods("POST")  // working
 	router.HandleFunc("/add-admin", authHandler.AddAdmin).Methods("POST")              //working 
@@ -109,18 +81,18 @@ func main() {
 	router.HandleFunc("/leader-board", socialHandler.Leaderboard).Methods("GET")           			// working this will show the leader board of the users.(has query param limit)-accessable to all
 	router.HandleFunc("/user-profile", socialHandler.UserProfile).Methods("GET")           				// working this will show the profile of a user-accessable to all        
 	router.HandleFunc("/recommendations", socialHandler.GetRecommendations).Methods("GET")    			// working this will give book recommendations based on the user's reading history
-	router.HandleFunc("/post-comment-review", socialHandler.PostCommentReview).Methods("POST")       
-	router.HandleFunc("/toggle-review-comment-upvote", socialHandler.ToggleCommentUpvoteReview).Methods("POST")
-	router.HandleFunc("/add-quote", socialHandler.AddCommentQuote).Methods("POST")              
-	router.HandleFunc("/toggle-quote-upvote", socialHandler.ToggleCommentUpvoteQuote).Methods("POST")
-	router.HandleFunc("/post-comment-quote", socialHandler.AddCommentQuote).Methods("POST")			  
-	router.HandleFunc("/toggle-comment-quote-upvote", socialHandler.ToggleCommentUpvoteQuote).Methods("POST")
-	router.HandleFunc("/list-notifications", socialHandler.ListNotifications).Methods("GET")       
-	router.HandleFunc("/mark-notification-seen", socialHandler.MarkNotificationsSeen).Methods("POST")
+	router.HandleFunc("/post-comment-review", socialHandler.PostCommentReview).Methods("POST")        // working this will help any user to comment on a review     
+	router.HandleFunc("/toggle-review-comment-upvote", socialHandler.ToggleCommentUpvoteReview).Methods("POST") // working this will help any user to upvote or remove upvote from a comment on a review
+	router.HandleFunc("/add-quote", socialHandler.AddQuote).Methods("POST")                                    // working this will help any user to add a quote           
+	router.HandleFunc("/toggle-quote-upvote", socialHandler.ToggleUpvoteQuote).Methods("POST")     // working this will help any user to upvote or remove upvote from a quote   
+	router.HandleFunc("/post-comment-quote", socialHandler.AddCommentQuote).Methods("POST")	   // working this will help any user to comment on a quote		  
+	router.HandleFunc("/toggle-comment-quote-upvote", socialHandler.ToggleCommentUpvoteQuote).Methods("POST")  // working this will help any user to upvote or remove upvote from a comment on a quote
+	router.HandleFunc("/list-notifications", socialHandler.ListNotifications).Methods("GET") // working this will help any user to see their notifications      
+	router.HandleFunc("/mark-notification-seen", socialHandler.MarkNotificationsSeen).Methods("POST") // working this will help any user to mark their notifications as seen
 	router.HandleFunc("/search-books", bookHandler.SearchBooks).Methods("GET")  						// working this will help to search the book using different queries like genre title, author
-	router.HandleFunc("search-reviews", socialHandler.SearchReviews).Methods("GET")  
-	router.HandleFunc("search-quotes", socialHandler.SearchQuotes).Methods("GET")
-	router.HandleFunc("search-users", socialHandler.SearchUsers).Methods("GET")
+	router.HandleFunc("/search-reviews", socialHandler.SearchReviews).Methods("GET")           // working this will help to search reviews using keywords 
+	router.HandleFunc("/search-quotes", socialHandler.SearchQuotes).Methods("GET")             // working this will help to search quotes using keywords 
+	router.HandleFunc("/search-users", socialHandler.SearchUsers).Methods("GET")          // working this will help to search users using keywords like name reader id insa batch dorm number educational status
 	router.HandleFunc("/analytics", socialHandler.Analytics).Methods("GET")  							// working it will give total analysis of things for the admin ! 
 	// Start the server
 	port := os.Getenv("PORT")

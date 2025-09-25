@@ -118,7 +118,7 @@ func UpdateUserBadgesAndClassTag(userID primitive.ObjectID, db *mongo.Database) 
 			"created_at":  time.Now(),
 		})
 	}
-
+	
 	// Update rank score
 	UpdateRankScore(db, user.ID, totalScore) // Adjust rank score
 	// Update ClassTag

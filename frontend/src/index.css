@@ -2,3 +2,10 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+.layer-top {
+  background: linear-gradient(to bottom, #4B0082 0%, transparent 100%);
+}
+.layer-bottom {
+  background: linear-gradient(to bottom, #F5F5F5 0%, #121212 100%);
+}

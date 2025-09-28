@@ -7,5 +7,36 @@
   background: linear-gradient(to bottom, #4B0082 0%, transparent 100%);
 }
 .layer-bottom {
-  background: linear-gradient(to bottom, #F5F5F5 0%, #121212 100%);
+  background: linear-gradient(to bottom, #ffffff 0%, #121212 100%);
+}
+
+/* Remove gaps between specific sections */
+#explore-books {
+  margin-bottom: -90px !important; /* Pulls the footer up */
+}
+
+footer {
+  margin-top: -1px !important; /* Pulls the footer up into the section above */
+}
+
+/* Ensure smooth transition */
+#explore-books + footer {
+  margin-top: 0 !important;
+}
+#why-join {
+  margin-bottom: -40px !important; /* Pulls the footer up */
+  margin-left:10px;
+  margin-right: 10px;
+}
+
+#how-it-works {
+  margin-bottom: -10px !important; /* Pulls the footer up */
+  margin-left:10px;
+  margin-right: 10px;
+}
+
+#home-hero {
+  margin-bottom: 0px !important; /* Pulls the footer up */
+  margin-left:10px;
+  margin-right: 10px;
 }

@@ -1,30 +1,49 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import Header from './components/social/Header';
 import Navbar from './components/common/Navbar';
-import Hero from './components/sections/Hero';
+import Footer from './components/common/Footer';
+import { BrowserRouter as Router } from 'react-router-dom';
+import Dashboard from './pages/Dashboard';
+import ExploreBooks from './components/sections/ExploreBooks';
+import Feed from './pages/Feeds';
+import Leaderboard from './pages/LeaderboardPage';
+import Profile from './pages/Profile';
+import Notifications from './pages/Notifications';
+import Register from './pages/RegisterPage';
+import Login from './pages/LoginPage';
+import PublicReviews from './pages/PublicReviewsPage';
+import PublicQuotes from './pages/PublicQuotesPage';
 import HomePage from './pages/HomePage';
-import LoginPage from './pages/LoginPage';
-import RegisterPage from './pages/RegisterPage';
-import LeaderboardPage from './pages/LeaderboardPage';
-import PublicReviewsPage from './pages/PublicReviewsPage';
-import SearchQuotesPage from './pages/SearchQuotesPage';
-
 const App: React.FC = () => {
   return (
     <Router>
-      <div className="flex flex-col min-h-screen">
+      <div className="min-h-screen flex flex-col bg-white">
         <Navbar />
+        <Header />
+        <main className="flex-grow relative">
         <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
-          <Route path="/leaderboard" element={<LeaderboardPage />} />
-          <Route path="/public-reviews" element={<PublicReviewsPage />} />
-          <Route path="/search-quotes" element={<SearchQuotesPage />} />
+          <Route path="/Home" element={< HomePage />} />
+          <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/books" element={<ExploreBooks />} />
+        <Route path="/feed" element={<Feed />} />
+        <Route path="/leaderboard" element={<Leaderboard />} />
+        <Route path="/profile/:readerId" element={<Profile />} />
+        <Route path="/notifications" element={<Notifications />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/reviews" element={<PublicReviews />} />
+        <Route path="/search-quotes" element={<PublicQuotes />} />
+        <Route path="/" element={<HomePage />} />
+         
         </Routes>
+        </main>
+        <Footer />
       </div>
     </Router>
   );
 };
 
 export default App;
+
+

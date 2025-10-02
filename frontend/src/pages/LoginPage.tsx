@@ -1,32 +1,54 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { loginUser } from './../api/api'; // Adjust path as needed
+import { loginUser, getUserProfile } from './../api/api';
+import { useAuth } from '../context/AuthContext';
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
   const navigate = useNavigate();
+  const { setToken, setUser } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSuccess(null);
+    setLoading(true);
 
     if (!email || !password) {
       setError('Email and password are required.');
+      setLoading(false);
       return;
     }
 
     try {
       const response = await loginUser({ email, password });
-      setSuccess('Login successful! Redirecting...');
-      // Redirect to homepage after 2 seconds
-      setTimeout(() => navigate('/'), 2000);
+      setToken(response.token);
+      
+      // Fetch user profile after successful login
+      const userProfile = await getUserProfile();
+      setUser({
+        id: userProfile.reader_id,
+        name: userProfile.name,
+        email: userProfile.email || email,
+        reader_id: userProfile.reader_id,
+        role: 'student', // Default role, could be extracted from token if needed
+        rank_score: userProfile.rank_score,
+        books_read: userProfile.books_read,
+        class_tag: userProfile.class_tag
+      });
+      
+      setSuccess('Login successful! Redirecting to Posts...');
+      // Redirect to Posts page after successful login
+      setTimeout(() => navigate('/posts'), 1500);
     } catch (err: any) {
       setError(err.message || 'Login failed. Please check your credentials.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -84,11 +106,16 @@ const Login: React.FC = () => {
           </div>
           <motion.button
             type="submit"
-            className="w-full py-3 bg-emerald-500 text-white rounded-md hover:bg-emerald-600 transition-colors duration-300"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.98 }}
+            disabled={loading}
+            className={`w-full py-3 text-white rounded-md transition-colors duration-300 ${
+              loading 
+                ? 'bg-gray-400 cursor-not-allowed' 
+                : 'bg-emerald-500 hover:bg-emerald-600'
+            }`}
+            whileHover={!loading ? { scale: 1.05 } : {}}
+            whileTap={!loading ? { scale: 0.98 } : {}}
           >
-            Log In
+            {loading ? 'Logging in...' : 'Log In'}
           </motion.button>
         </form>
         <div className="mt-4 text-center">

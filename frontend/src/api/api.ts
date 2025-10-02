@@ -1,5 +1,4 @@
 import axios, { AxiosInstance, AxiosResponse, AxiosError } from 'axios';
-
 // Base URL for your Go backend
 const API_BASE_URL = 'http://localhost:8080'; // Update if different or using proxy
 
@@ -56,11 +55,13 @@ interface BooksResponse {
 }
 
 interface Review {
+  id?: string;
   isbn: string;
   reader_id: string;
   review_text: string;
   upvotes: number;
   created_at: string;
+  user_name?: string;
 }
 
 interface ReviewsResponse {
@@ -81,61 +82,82 @@ interface QuotesResponse {
   quotes: Quote[];
 }
 
-interface Progress {
-  reader_id: string;
-  books_borrowed: number;
-  books_read: number;
-  reading_streak: number;
-  latest_badge: string;
-}
-
-interface ProgressResponse {
-  progress: Progress;
-}
-
-interface Comment {
-  id: string;
-  review_id?: string;
-  quote_id?: string;
-  reader_id: string;
-  user_name: string;
-  text: string;
-  created_at: string;
-}
-
-interface CommentsResponse {
-  comments: Comment[];
-}
-
-
-// In api.ts - add export
-export interface Notification {
-  id: string;
-  reader_id: string;
-  message: string;
-  related_post_id?: string;
-  created_at: string;
-}
-
-interface NotificationsResponse {
-  notifications: Notification[];
-}
-
 interface UserProfile {
-  reader_id: string;
   name: string;
+  reader_id: string;
   class_tag: string;
   rank_score: number;
   books_read: number;
   badges: string[];
-  borrow_history: Array<{
-    book_title: string;
-    borrow_date: string;
-    return_date: string;
-    returned: boolean;
-  }>;
-  created_at?: string; // We'll get this from the user data
+  borrow_history: BorrowHistoryEntry[];
+  email?: string;
+  dorm_number?: string;
+  insa_batch?: string;
+  educational_status?: string;
 }
+
+interface BorrowHistoryEntry {
+  book_title: string;
+  borrow_date: string;
+  return_date: string;
+  returned: boolean;
+}
+
+interface ReadingProgressEntry {
+  title: string;
+  author: string;
+  isbn: string;
+  total_page: number;
+  pages_read: number;
+  start_date: string;
+  competed_status: boolean;
+  reflection: string;
+  completed_date: string;
+  streak_days: number;
+  last_updated: string;
+}
+
+interface ReadingProgressResponse {
+  "your reading progress": ReadingProgressEntry[];
+}
+
+interface Notification {
+  user_id: string;
+  actor_id: string;
+  target_id: string;
+  type: string;
+  seen: boolean;
+  created_at: string;
+}
+
+interface NotificationsResponse {
+  count: number;
+  notifications: Notification[];
+}
+
+interface PostComment {
+  id: string;
+  text: string;
+  user_name: string;
+  reader_id: string;
+  upvotes: number;
+  created_at: string;
+}
+
+interface Post {
+  id: string;
+  type: 'quote' | 'review';
+  content: string;
+  user_name: string;
+  reader_id: string;
+  upvotes: number;
+  created_at: string;
+  book_title?: string;
+  isbn?: string;
+  comments?: PostComment[];
+}
+
+// Import axios and its types
 
 // Create Axios instance
 const apiClient: AxiosInstance = axios.create({
@@ -225,7 +247,7 @@ export async function addSoftToReading(isbn: string): Promise<AddSoftResponse> {
   return apiClient.post('/add-soft-to-reading', { isbn });
 }
 
-// Fetch leaderboard (public GET /leaderboard)
+// Fetch leaderboard (public GET /leader-board)
 export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
   try {
     const data: LeaderboardResponse = await apiClient.get('/leader-board');
@@ -266,67 +288,125 @@ export async function getQuotes(): Promise<QuotesResponse> {
   }
 }
 
-// Create quote (protected POST /quotes)
-export async function createQuote(quoteData: {
-  text: string;
-  book_isbn: string;
+// Get user profile (protected GET /user-profile)
+export async function getUserProfile(targetId?: string): Promise<UserProfile> {
+  const params = targetId ? { target_id: targetId } : {};
+  return apiClient.get('/user-profile', { params });
+}
+
+// Get user reading progress (protected GET /user-reading-progress)
+export async function getReadingProgress(): Promise<ReadingProgressEntry[]> {
+  const data: ReadingProgressResponse = await apiClient.get('/user-reading-progress');
+  return data["your reading progress"] || [];
+}
+
+// Update reading progress (protected POST /reading-progress)
+export async function updateReadingProgress(progressData: {
+  isbn: string;
+  pages_read: number;
+  reflection?: string;
 }): Promise<{ message: string }> {
-  return apiClient.post('/quotes', quoteData);
+  return apiClient.post('/reading-progress', progressData);
 }
 
-// Fetch user progress (protected GET /progress)
-export async function getProgress(): Promise<Progress> {
-  try {
-    const data: ProgressResponse = await apiClient.get('/progress');
-    console.log('Raw progress response:', data);
-    return data.progress || {};
-  } catch (error) {
-    throw error;
-  }
+// Submit review (protected POST /submit-review)
+export async function submitReview(reviewData: {
+  isbn: string;
+  review_text: string;
+}): Promise<{ message: string }> {
+  return apiClient.post('/submit-review', reviewData);
 }
 
-// Fetch comments for a review or quote (public GET /comments)
-export async function getComments(postId: string, type: 'review' | 'quote'): Promise<Comment[]> {
-  try {
-    const data: CommentsResponse = await apiClient.get('/comments', {
-      params: { post_id: postId, type },
-    });
-    console.log('Raw comments response:', data);
-    return data.comments || [];
-  } catch (error) {
-    throw error;
-  }
+// Add quote (protected POST /add-quote)
+export async function addQuote(quoteData: {
+  text: string;
+}): Promise<{ message: string; quote_id: string }> {
+  return apiClient.post('/add-quote', quoteData);
 }
 
-// Create comment (protected POST /comments)
-export async function createComment(commentData: {
-  review_id?: string;
-  quote_id?: string;
+// Toggle upvote on review (protected POST /toggle-upvote)
+export async function toggleUpvoteReview(reviewId: string): Promise<{ message: string; upvotes: number }> {
+  return apiClient.post('/toggle-upvote', { review_id: reviewId });
+}
+
+// Toggle upvote on quote (protected POST /toggle-quote-upvote)
+export async function toggleUpvoteQuote(quoteId: string): Promise<{ message: string; upvotes: number }> {
+  return apiClient.post(`/toggle-quote-upvote?id=${quoteId}`);
+}
+
+// Post comment on review (protected POST /post-comment-review)
+export async function postCommentOnReview(commentData: {
+  review_id: string;
   text: string;
 }): Promise<{ message: string }> {
-  return apiClient.post('/comments', commentData);
+  return apiClient.post('/post-comment-review', commentData);
 }
 
-// Fetch notifications (protected GET /notifications)
-export async function getNotifications(): Promise<Notification[]> {
-  try {
-    const data: NotificationsResponse = await apiClient.get('list-notifications');
-    console.log('Raw notifications response:', data);
-    return data.notifications || [];
-  } catch (error) {
-    throw error;
-  }
+// Add comment on quote (protected POST /post-comment-quote)
+export async function addCommentOnQuote(commentData: {
+  quote_id: string;
+  text: string;
+}): Promise<{ message: string }> {
+  return apiClient.post('/post-comment-quote', commentData);
 }
 
-// Add to your api.ts file
-
-
-export async function getUserProfile(readerId: string): Promise<UserProfile> {
-  return apiClient.get('/user-profile', { params: { target_id: readerId } });
+// Toggle upvote on review comment (protected POST /toggle-review-comment-upvote)
+export async function toggleUpvoteComment(commentId: string): Promise<{ message: string }> {
+  return apiClient.post('/toggle-review-comment-upvote', { comment_id: commentId });
 }
 
-export async function getMyProfile(): Promise<UserProfile> {
-  const currentUserId = localStorage.getItem('userId');
-  if (!currentUserId) throw new Error('No logged-in user');
-  return getUserProfile(currentUserId);
+// Toggle upvote on quote comment (protected POST /toggle-comment-quote-upvote)
+export async function toggleUpvoteQuoteComment(commentId: string): Promise<{ message: string; upvotes: number }> {
+  return apiClient.post('/toggle-comment-quote-upvote', { comment_id: commentId });
+}
+
+// Get notifications (protected GET /list-notifications)
+export async function getNotifications(): Promise<NotificationsResponse> {
+  return apiClient.get('/list-notifications');
+}
+
+// Mark notifications as seen (protected POST /mark-notification-seen)
+export async function markNotificationsAsSeen(): Promise<{ message: string }> {
+  return apiClient.post('/mark-notification-seen');
+}
+
+// Search reviews (public GET /search-reviews)
+export async function searchReviews(query?: string, isbn?: string, userId?: string): Promise<{ count: number; reviews: Review[] }> {
+  const params: any = {};
+  if (query) params.query = query;
+  if (isbn) params.isbn = isbn;
+  if (userId) params.user_id = userId;
+  return apiClient.get('/search-reviews', { params });
+}
+
+// Search quotes (public GET /search-quotes)
+export async function searchQuotes(query?: string, userId?: string): Promise<QuotesResponse> {
+  const params: any = {};
+  if (query) params.query = query;
+  if (userId) params.user_id = userId;
+  return apiClient.get('/search-quotes', { params });
+}
+
+// Get book readers (admin GET /check-book-readers)
+export async function getBookReaders(isbn: string): Promise<{ isbn: string; active_readers: any[] }> {
+  return apiClient.get('/check-book-readers', { data: { isbn } });
+}
+
+// Get user borrow history (protected GET /user-borrow-history)
+export async function getBorrowHistory(): Promise<BorrowHistoryEntry[]> {
+  return apiClient.get('/user-borrow-history');
+}
+
+// Get comments for a review (we'll need to create this endpoint or fetch from existing data)
+export async function getReviewComments(reviewId: string): Promise<PostComment[]> {
+  // This endpoint might not exist yet - we'll need to fetch comments differently
+  // For now, return empty array and we'll implement fetching in the component
+  return [];
+}
+
+// Get comments for a quote (we'll need to create this endpoint or fetch from existing data)
+export async function getQuoteComments(quoteId: string): Promise<PostComment[]> {
+  // This endpoint might not exist yet - we'll need to fetch comments differently
+  // For now, return empty array and we'll implement fetching in the component
+  return [];
 }

@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { useAuth } from '../../context/AuthContext';
 
 // Navbar component for the INSA Reading Challenge app
 const Navbar: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, isLoggedIn, logout } = useAuth();
 
   // Toggle mobile menu
   const toggleMenu = () => setIsOpen(!isOpen);
@@ -93,8 +96,22 @@ const Navbar: React.FC = () => {
     }
   };
 
-  // Mobile menu items data
-  const mobileMenuItems = [
+  // Handle logout
+  const handleLogout = () => {
+    logout();
+    navigate('/');
+    setIsOpen(false);
+  };
+
+  // Mobile menu items data - dynamic based on login status
+  const mobileMenuItems = isLoggedIn ? [
+    { to: '/posts', label: 'Posts', onClick: toggleMenu },
+    { to: '/reading-progress', label: 'Reading Progress', onClick: toggleMenu },
+    { to: '/books', label: 'Books', onClick: toggleMenu },
+    { to: '/notifications', label: 'Notifications', onClick: toggleMenu },
+    { to: '/profile', label: 'Profile', onClick: toggleMenu },
+    { to: '/leaderboard', label: 'Leaderboard', onClick: toggleMenu },
+  ] : [
     { to: '/#hero', label: 'Home', onClick: handleHomeClick },
     { to: '/#how-it-works', label: 'How It Works', onClick: (e: React.MouseEvent) => handleSectionClick('how-it-works', e) },
     { to: '/#why-join', label: 'Why Join', onClick: (e: React.MouseEvent) => handleSectionClick('why-join', e) },
@@ -142,161 +159,237 @@ const Navbar: React.FC = () => {
 
           {/* Desktop Navigation */}
           <div className="flex items-center space-x-2 mr-6 hidden md:flex">
-            {/* Home Link */}
-            <Link
-              to="/#hero"
-              className="relative group"
-              onClick={handleHomeClick}
-            >
-              <motion.span
-                className="relative inline-block px-4 py-2 text-gray-700 font-medium rounded-lg"
-                whileHover="hover"
-                whileTap="tap"
-                variants={navItemVariants}
-              >
-                <motion.span variants={linkVariants}>
-                  Home
-                </motion.span>
-                {/* Bottom border animation */}
-                <motion.span
-                  className="absolute bottom-0 left-0 h-0.5 bg-indigo-600 rounded-full"
-                  variants={borderFillVariants}
-                  initial="initial"
-                  whileHover="hover"
-                />
-                {/* Background fill */}
-                <motion.span
-                  className="absolute inset-0 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg -z-10"
-                  initial={{ opacity: 0 }}
-                  whileHover={{ opacity: 1 }}
-                  transition={{ duration: 0.2 }}
-                />
-              </motion.span>
-            </Link>
-
-            {/* Section Links */}
-            {['how-it-works', 'why-join', 'explore-books'].map((section) => (
-              <Link
-                key={section}
-                to={`/#${section}`}
-                className="relative group"
-                onClick={(e: React.MouseEvent) => handleSectionClick(section, e)}
-              >
-                <motion.span
-                  className="relative inline-block px-4 py-2 text-gray-700 font-medium rounded-lg"
-                  whileHover="hover"
-                  whileTap="tap"
-                  variants={navItemVariants}
+            {isLoggedIn ? (
+              // Logged-in navigation
+              <>
+                {['posts', 'reading-progress', 'books', 'notifications', 'profile', 'leaderboard'].map((page) => (
+                  <Link
+                    key={page}
+                    to={`/${page}`}
+                    className="relative group"
+                  >
+                    <motion.span
+                      className="relative inline-block px-4 py-2 text-gray-700 font-medium rounded-lg"
+                      whileHover="hover"
+                      whileTap="tap"
+                      variants={navItemVariants}
+                    >
+                      <motion.span variants={linkVariants}>
+                        {page.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+                      </motion.span>
+                      <motion.span
+                        className="absolute bottom-0 left-0 h-0.5 bg-indigo-600 rounded-full"
+                        variants={borderFillVariants}
+                        initial="initial"
+                        whileHover="hover"
+                      />
+                      <motion.span
+                        className="absolute inset-0 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg -z-10"
+                        initial={{ opacity: 0 }}
+                        whileHover={{ opacity: 1 }}
+                        transition={{ duration: 0.2 }}
+                      />
+                    </motion.span>
+                  </Link>
+                ))}
+              </>
+            ) : (
+              // Public navigation
+              <>
+                {/* Home Link */}
+                <Link
+                  to="/#hero"
+                  className="relative group"
+                  onClick={handleHomeClick}
                 >
-                  <motion.span variants={linkVariants}>
-                    {section.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
-                  </motion.span>
                   <motion.span
-                    className="absolute bottom-0 left-0 h-0.5 bg-indigo-600 rounded-full"
-                    variants={borderFillVariants}
-                    initial="initial"
+                    className="relative inline-block px-4 py-2 text-gray-700 font-medium rounded-lg"
                     whileHover="hover"
-                  />
-                  <motion.span
-                    className="absolute inset-0 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg -z-10"
-                    initial={{ opacity: 0 }}
-                    whileHover={{ opacity: 1 }}
-                    transition={{ duration: 0.2 }}
-                  />
-                </motion.span>
-              </Link>
-            ))}
+                    whileTap="tap"
+                    variants={navItemVariants}
+                  >
+                    <motion.span variants={linkVariants}>
+                      Home
+                    </motion.span>
+                    <motion.span
+                      className="absolute bottom-0 left-0 h-0.5 bg-indigo-600 rounded-full"
+                      variants={borderFillVariants}
+                      initial="initial"
+                      whileHover="hover"
+                    />
+                    <motion.span
+                      className="absolute inset-0 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg -z-10"
+                      initial={{ opacity: 0 }}
+                      whileHover={{ opacity: 1 }}
+                      transition={{ duration: 0.2 }}
+                    />
+                  </motion.span>
+                </Link>
 
-            {/* Other page links */}
-            {['leaderboard', 'reviews', 'search-quotes'].map((page) => (
-              <Link
-                key={page}
-                to={`/${page}`}
-                className="relative group"
-              >
-                <motion.span
-                  className="relative inline-block px-4 py-2 text-gray-700 font-medium rounded-lg"
-                  whileHover="hover"
-                  whileTap="tap"
-                  variants={navItemVariants}
-                >
-                  <motion.span variants={linkVariants}>
-                    {page.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
-                  </motion.span>
-                  <motion.span
-                    className="absolute bottom-0 left-0 h-0.5 bg-indigo-600 rounded-full"
-                    variants={borderFillVariants}
-                    initial="initial"
-                    whileHover="hover"
-                  />
-                  <motion.span
-                    className="absolute inset-0 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg -z-10"
-                    initial={{ opacity: 0 }}
-                    whileHover={{ opacity: 1 }}
-                    transition={{ duration: 0.2 }}
-                  />
-                </motion.span>
-              </Link>
-            ))}
+                {/* Section Links */}
+                {['how-it-works', 'why-join', 'explore-books'].map((section) => (
+                  <Link
+                    key={section}
+                    to={`/#${section}`}
+                    className="relative group"
+                    onClick={(e: React.MouseEvent) => handleSectionClick(section, e)}
+                  >
+                    <motion.span
+                      className="relative inline-block px-4 py-2 text-gray-700 font-medium rounded-lg"
+                      whileHover="hover"
+                      whileTap="tap"
+                      variants={navItemVariants}
+                    >
+                      <motion.span variants={linkVariants}>
+                        {section.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+                      </motion.span>
+                      <motion.span
+                        className="absolute bottom-0 left-0 h-0.5 bg-indigo-600 rounded-full"
+                        variants={borderFillVariants}
+                        initial="initial"
+                        whileHover="hover"
+                      />
+                      <motion.span
+                        className="absolute inset-0 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg -z-10"
+                        initial={{ opacity: 0 }}
+                        whileHover={{ opacity: 1 }}
+                        transition={{ duration: 0.2 }}
+                      />
+                    </motion.span>
+                  </Link>
+                ))}
+
+                {/* Other page links */}
+                {['leaderboard', 'reviews', 'search-quotes'].map((page) => (
+                  <Link
+                    key={page}
+                    to={`/${page}`}
+                    className="relative group"
+                  >
+                    <motion.span
+                      className="relative inline-block px-4 py-2 text-gray-700 font-medium rounded-lg"
+                      whileHover="hover"
+                      whileTap="tap"
+                      variants={navItemVariants}
+                    >
+                      <motion.span variants={linkVariants}>
+                        {page.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+                      </motion.span>
+                      <motion.span
+                        className="absolute bottom-0 left-0 h-0.5 bg-indigo-600 rounded-full"
+                        variants={borderFillVariants}
+                        initial="initial"
+                        whileHover="hover"
+                      />
+                      <motion.span
+                        className="absolute inset-0 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg -z-10"
+                        initial={{ opacity: 0 }}
+                        whileHover={{ opacity: 1 }}
+                        transition={{ duration: 0.2 }}
+                      />
+                    </motion.span>
+                  </Link>
+                ))}
+              </>
+            )}
           </div>
 
-          {/* Login and Register Buttons */}
+          {/* Auth Buttons */}
           <div className="flex items-center mr-24 hidden md:flex space-x-3">
-            <Link
-              to="/login"
-              className="relative group"
-            >
-              <motion.span
-                className="relative inline-block px-6 py-2 bg-indigo-600 text-white font-medium rounded-lg shadow-md"
-                whileHover="hover"
-                whileTap="tap"
-                variants={navItemVariants}
-              >
-                <motion.span variants={linkVariants}>
-                  Login
-                </motion.span>
-                <motion.span
-                  className="absolute inset-0 border-2 border-indigo-400 rounded-lg opacity-0 group-hover:opacity-100"
-                  initial={{ scale: 0.9 }}
-                  whileHover={{ scale: 1 }}
-                  transition={{ duration: 0.2 }}
-                />
-                <motion.span
-                  className="absolute inset-0 bg-indigo-700 rounded-lg -z-10"
-                  initial={{ opacity: 0 }}
-                  whileHover={{ opacity: 1 }}
-                  transition={{ duration: 0.2 }}
-                />
-              </motion.span>
-            </Link>
-            
-            <Link
-              to="/register"
-              className="relative group"
-            >
-              <motion.span
-                className="relative inline-block px-6 py-2 bg-emerald-500 text-white font-medium rounded-lg shadow-md"
-                whileHover="hover"
-                whileTap="tap"
-                variants={navItemVariants}
-              >
-                <motion.span variants={linkVariants}>
-                  Register
-                </motion.span>
-                <motion.span
-                  className="absolute inset-0 border-2 border-emerald-400 rounded-lg opacity-0 group-hover:opacity-100"
-                  initial={{ scale: 0.9 }}
-                  whileHover={{ scale: 1 }}
-                  transition={{ duration: 0.2 }}
-                />
-                <motion.span
-                  className="absolute inset-0 bg-emerald-600 rounded-lg -z-10"
-                  initial={{ opacity: 0 }}
-                  whileHover={{ opacity: 1 }}
-                  transition={{ duration: 0.2 }}
-                />
-              </motion.span>
-            </Link>
+            {isLoggedIn ? (
+              // Logged-in user actions
+              <>
+                <div className="text-gray-700 font-medium">
+                  Welcome, {user?.name}
+                </div>
+                <motion.button
+                  onClick={handleLogout}
+                  className="relative group"
+                >
+                  <motion.span
+                    className="relative inline-block px-6 py-2 bg-red-600 text-white font-medium rounded-lg shadow-md"
+                    whileHover="hover"
+                    whileTap="tap"
+                    variants={navItemVariants}
+                  >
+                    <motion.span variants={linkVariants}>
+                      Logout
+                    </motion.span>
+                    <motion.span
+                      className="absolute inset-0 border-2 border-red-400 rounded-lg opacity-0 group-hover:opacity-100"
+                      initial={{ scale: 0.9 }}
+                      whileHover={{ scale: 1 }}
+                      transition={{ duration: 0.2 }}
+                    />
+                    <motion.span
+                      className="absolute inset-0 bg-red-700 rounded-lg -z-10"
+                      initial={{ opacity: 0 }}
+                      whileHover={{ opacity: 1 }}
+                      transition={{ duration: 0.2 }}
+                    />
+                  </motion.span>
+                </motion.button>
+              </>
+            ) : (
+              // Public user actions
+              <>
+                <Link
+                  to="/login"
+                  className="relative group"
+                >
+                  <motion.span
+                    className="relative inline-block px-6 py-2 bg-indigo-600 text-white font-medium rounded-lg shadow-md"
+                    whileHover="hover"
+                    whileTap="tap"
+                    variants={navItemVariants}
+                  >
+                    <motion.span variants={linkVariants}>
+                      Login
+                    </motion.span>
+                    <motion.span
+                      className="absolute inset-0 border-2 border-indigo-400 rounded-lg opacity-0 group-hover:opacity-100"
+                      initial={{ scale: 0.9 }}
+                      whileHover={{ scale: 1 }}
+                      transition={{ duration: 0.2 }}
+                    />
+                    <motion.span
+                      className="absolute inset-0 bg-indigo-700 rounded-lg -z-10"
+                      initial={{ opacity: 0 }}
+                      whileHover={{ opacity: 1 }}
+                      transition={{ duration: 0.2 }}
+                    />
+                  </motion.span>
+                </Link>
+                
+                <Link
+                  to="/register"
+                  className="relative group"
+                >
+                  <motion.span
+                    className="relative inline-block px-6 py-2 bg-emerald-500 text-white font-medium rounded-lg shadow-md"
+                    whileHover="hover"
+                    whileTap="tap"
+                    variants={navItemVariants}
+                  >
+                    <motion.span variants={linkVariants}>
+                      Register
+                    </motion.span>
+                    <motion.span
+                      className="absolute inset-0 border-2 border-emerald-400 rounded-lg opacity-0 group-hover:opacity-100"
+                      initial={{ scale: 0.9 }}
+                      whileHover={{ scale: 1 }}
+                      transition={{ duration: 0.2 }}
+                    />
+                    <motion.span
+                      className="absolute inset-0 bg-emerald-600 rounded-lg -z-10"
+                      initial={{ opacity: 0 }}
+                      whileHover={{ opacity: 1 }}
+                      transition={{ duration: 0.2 }}
+                    />
+                  </motion.span>
+                </Link>
+              </>
+            )}
           </div>
 
           {/* Mobile Menu Button */}
@@ -368,30 +461,51 @@ const Navbar: React.FC = () => {
           
           {/* Mobile auth buttons */}
           <div className="pt-2 space-y-2 border-t border-gray-200">
-            <Link
-              to="/login"
-              className="block relative group bg-indigo-600 text-white px-3 py-3 rounded-lg font-medium text-center"
-              onClick={toggleMenu}
-            >
-              <motion.span
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                Login
-              </motion.span>
-            </Link>
-            <Link
-              to="/register"
-              className="block relative group bg-emerald-500 text-white px-3 py-3 rounded-lg font-medium text-center"
-              onClick={toggleMenu}
-            >
-              <motion.span
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                Register
-              </motion.span>
-            </Link>
+            {isLoggedIn ? (
+              <>
+                <div className="text-center text-gray-700 font-medium py-2">
+                  Welcome, {user?.name}
+                </div>
+                <motion.button
+                  onClick={handleLogout}
+                  className="block w-full bg-red-600 text-white px-3 py-3 rounded-lg font-medium text-center"
+                >
+                  <motion.span
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    Logout
+                  </motion.span>
+                </motion.button>
+              </>
+            ) : (
+              <>
+                <Link
+                  to="/login"
+                  className="block relative group bg-indigo-600 text-white px-3 py-3 rounded-lg font-medium text-center"
+                  onClick={toggleMenu}
+                >
+                  <motion.span
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    Login
+                  </motion.span>
+                </Link>
+                <Link
+                  to="/register"
+                  className="block relative group bg-emerald-500 text-white px-3 py-3 rounded-lg font-medium text-center"
+                  onClick={toggleMenu}
+                >
+                  <motion.span
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    Register
+                  </motion.span>
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </motion.div>

@@ -33,9 +33,9 @@ const Register: React.FC = () => {
         dorm_number: dormNumber,
         educational_status: educationalStatus,
       });
-      setSuccess(response.message);
-      // Redirect to login after 2 seconds
-      setTimeout(() => navigate('/login'), 2000);
+      setSuccess("Admin approval pending. You will receive an approval message via the email you provided — please wait.");
+      // Redirect to public homepage after 3 seconds
+      setTimeout(() => navigate('/'), 3000);
     } catch (err: any) {
       setError(err.message || 'Registration failed. Please try again.');
     }

@@ -1,46 +1,56 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import Header from './components/social/Header';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Navbar from './components/common/Navbar';
 import Footer from './components/common/Footer';
-import { BrowserRouter as Router } from 'react-router-dom';
-import Dashboard from './pages/Dashboard';
+import { AuthProvider } from './context/AuthContext';
+
 import ExploreBooks from './components/sections/ExploreBooks';
-import Feed from './pages/Feeds';
+
 import Leaderboard from './pages/LeaderboardPage';
-import Profile from './pages/Profile';
-import Notifications from './pages/Notifications';
 import Register from './pages/RegisterPage';
 import Login from './pages/LoginPage';
 import PublicReviews from './pages/PublicReviewsPage';
 import PublicQuotes from './pages/PublicQuotesPage';
 import HomePage from './pages/HomePage';
+
+// New logged-in pages
+import PostsPage from './pages/PostsPage';
+import ReadingProgressPage from './pages/ReadingProgressPage';
+import BooksPage from './pages/BooksPage';
+import NotificationsPage from './pages/NotificationsPage';
+import ProfilePage from './pages/ProfilePage';
 const App: React.FC = () => {
   return (
-    <Router>
-      <div className="min-h-screen flex flex-col bg-white">
-        <Navbar />
-        <Header />
-        <main className="flex-grow relative">
-        <Routes>
-          <Route path="/Home" element={< HomePage />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/books" element={<ExploreBooks />} />
-        <Route path="/feed" element={<Feed />} />
-        <Route path="/leaderboard" element={<Leaderboard />} />
-        <Route path="/profile/:readerId" element={<Profile />} />
-        <Route path="/notifications" element={<Notifications />} />
-        <Route path="/register" element={<Register />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/reviews" element={<PublicReviews />} />
-        <Route path="/search-quotes" element={<PublicQuotes />} />
-        <Route path="/" element={<HomePage />} />
+    <AuthProvider>
+      <Router>
+        <div className="min-h-screen flex flex-col bg-white">
+          <Navbar />
          
-        </Routes>
-        </main>
-        <Footer />
-      </div>
-    </Router>
+          <main className="flex-grow relative">
+            <Routes>
+              {/* Public routes */}
+              <Route path="/" element={<HomePage />} />
+              <Route path="/Home" element={<HomePage />} />
+              <Route path="/explore-books" element={<ExploreBooks />} />
+              <Route path="/leaderboard" element={<Leaderboard />} />
+              <Route path="/register" element={<Register />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/reviews" element={<PublicReviews />} />
+              <Route path="/search-quotes" element={<PublicQuotes />} />
+              
+              {/* Logged-in user routes */}
+              <Route path="/posts" element={<PostsPage />} />
+              <Route path="/reading-progress" element={<ReadingProgressPage />} />
+              <Route path="/books" element={<BooksPage />} />
+              <Route path="/notifications" element={<NotificationsPage />} />
+              <Route path="/profile" element={<ProfilePage />} />
+              <Route path="/profile/:userId" element={<ProfilePage />} />
+            </Routes>
+          </main>
+          <Footer />
+        </div>
+      </Router>
+    </AuthProvider>
   );
 };
 

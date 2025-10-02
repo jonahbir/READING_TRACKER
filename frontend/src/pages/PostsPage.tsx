@@ -11,7 +11,9 @@ import {
   addCommentOnQuote,
   searchReviews,
   toggleUpvoteComment,
-  toggleUpvoteQuoteComment
+  toggleUpvoteQuoteComment,
+  getReviewComments,
+  getQuoteComments
 } from '../api/api';
 
 interface Post {
@@ -45,6 +47,8 @@ const PostsPage: React.FC = () => {
   const [submittingQuote, setSubmittingQuote] = useState(false);
   const [commentTexts, setCommentTexts] = useState<{ [key: string]: string }>({});
   const [showComments, setShowComments] = useState<{ [key: string]: boolean }>({});
+  const [commentsByPostId, setCommentsByPostId] = useState<{ [key: string]: PostComment[] }>({});
+  const [loadingComments, setLoadingComments] = useState<{ [key: string]: boolean }>({});
 
   useEffect(() => {
     if (isLoggedIn) {
@@ -60,20 +64,23 @@ const PostsPage: React.FC = () => {
         searchQuotes()
       ]);
 
+      const reviews = reviewsResponse.reviews ?? [];
+      const quotes = quotesResponse.quotes ?? [];
       // Merge and sort posts by creation time
       const allPosts: Post[] = [
-        ...reviewsResponse.reviews.map(review => ({
-          id: review.id || `review-${review.isbn}-${review.reader_id}`,
-          type: 'review' as const,
-          content: review.review_text,
-          user_name: review.user_name || review.reader_id, // Use user_name if available
-          reader_id: review.reader_id,
-          upvotes: review.upvotes,
-          created_at: review.created_at,
-          isbn: review.isbn,
-          comments: []
-        })),
-        ...quotesResponse.quotes.map(quote => ({
+        ...reviews
+          .filter((review) => !!review.id)
+          .map(review => ({
+            id: review.id as string, // type-safe
+            type: 'review' as const,
+            content: review.review_text,
+            user_name: review.user_name || review.reader_id, // Use user_name if available
+            reader_id: review.reader_id,
+            upvotes: review.upvotes,
+            created_at: review.created_at,
+            comments: []
+          })),
+        ...quotes.map(quote => ({
           id: quote.id,
           type: 'quote' as const,
           content: quote.text,
@@ -160,18 +167,18 @@ const PostsPage: React.FC = () => {
       ]);
 
       const searchResults: Post[] = [
-        ...reviewsResponse.reviews.map(review => ({
-          id: review.id || `review-${review.isbn}-${review.reader_id}`,
-          type: 'review' as const,
-          content: review.review_text,
-          user_name: review.user_name || review.reader_id,
-          reader_id: review.reader_id,
-          upvotes: review.upvotes,
-          created_at: review.created_at,
-          isbn: review.isbn,
-          comments: []
-        })),
-        ...quotesResponse.quotes.map(quote => ({
+        ...(reviewsResponse.reviews ?? []).filter((review) => !!review.id)
+          .map(review => ({
+            id: review.id as string, // In searchResults and anywhere else reviews are mapped, use review.id only
+            type: 'review' as const,
+            content: review.review_text,
+            user_name: review.user_name || review.reader_id,
+            reader_id: review.reader_id,
+            upvotes: review.upvotes,
+            created_at: review.created_at,
+            comments: []
+          })),
+        ...(quotesResponse.quotes ?? []).map(quote => ({
           id: quote.id,
           type: 'quote' as const,
           content: quote.text,
@@ -188,6 +195,27 @@ const PostsPage: React.FC = () => {
       console.error('Error searching posts:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleToggleComments = async (post: Post) => {
+    setShowComments((prev) => ({ ...prev, [post.id]: !prev[post.id] }));
+    if (!showComments[post.id]) {
+      // Only fetch if not already loaded
+      setLoadingComments((prev) => ({ ...prev, [post.id]: true }));
+      try {
+        let comments: PostComment[] = [];
+        if (post.type === 'review') {
+          comments = await getReviewComments(post.id);
+        } else {
+          comments = await getQuoteComments(post.id);
+        }
+        setCommentsByPostId((prev) => ({ ...prev, [post.id]: comments }));
+      } catch (error) {
+        setCommentsByPostId((prev) => ({ ...prev, [post.id]: [] }));
+      } finally {
+        setLoadingComments((prev) => ({ ...prev, [post.id]: false }));
+      }
     }
   };
 
@@ -368,7 +396,7 @@ const PostsPage: React.FC = () => {
                     </motion.button>
 
                     <motion.button
-                      onClick={() => setShowComments({ ...showComments, [post.id]: !showComments[post.id] })}
+                      onClick={() => handleToggleComments(post)}
                       className="flex items-center space-x-2 text-blue-200 hover:text-blue-400 transition-colors"
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
@@ -413,12 +441,13 @@ const PostsPage: React.FC = () => {
                         Post
                       </motion.button>
                     </div>
-
                     {/* Display existing comments */}
-                    {post.comments && post.comments.length > 0 ? (
+                    {loadingComments[post.id] ? (
+                      <div className="text-blue-200 text-sm">Loading comments...</div>
+                    ) : commentsByPostId[post.id] && commentsByPostId[post.id].length > 0 ? (
                       <div className="space-y-3">
-                        <h4 className="text-blue-200 text-sm font-semibold">Comments ({post.comments.length})</h4>
-                        {post.comments.map((comment) => (
+                        <h4 className="text-blue-200 text-sm font-semibold">Comments ({commentsByPostId[post.id].length})</h4>
+                        {commentsByPostId[post.id].map((comment) => (
                           <div key={comment.id} className="flex space-x-3">
                             <div className="w-8 h-8 bg-gradient-to-r from-gray-500 to-gray-600 rounded-full flex items-center justify-center text-white text-sm font-bold">
                               {comment.user_name.charAt(0).toUpperCase()}
@@ -430,7 +459,6 @@ const PostsPage: React.FC = () => {
                                   <span className="text-blue-200 text-xs">{comment.user_name} • {formatDate(comment.created_at)}</span>
                                   <motion.button
                                     onClick={() => {
-                                      // Handle comment like
                                       if (post.type === 'review') {
                                         toggleUpvoteComment(comment.id);
                                       } else {

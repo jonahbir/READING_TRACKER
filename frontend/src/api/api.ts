@@ -397,16 +397,30 @@ export async function getBorrowHistory(): Promise<BorrowHistoryEntry[]> {
   return apiClient.get('/user-borrow-history');
 }
 
-// Get comments for a review (we'll need to create this endpoint or fetch from existing data)
+// Get comments for a review
 export async function getReviewComments(reviewId: string): Promise<PostComment[]> {
-  // This endpoint might not exist yet - we'll need to fetch comments differently
-  // For now, return empty array and we'll implement fetching in the component
-  return [];
+  const data: { comments: any[] } = await apiClient.get('/review-comments', { params: { reviewId } });
+  // The backend returns { comments: [...] }
+  return (data.comments || []).map((c: any) => ({
+    id: c._id || c.id,
+    text: c.text,
+    user_name: c.user_name || '', // You may want to fetch user info if not present
+    reader_id: c.reader_id || '',
+    upvotes: c.upvotes || 0,
+    created_at: c.created_at,
+  }));
 }
 
-// Get comments for a quote (we'll need to create this endpoint or fetch from existing data)
+// Get comments for a quote
 export async function getQuoteComments(quoteId: string): Promise<PostComment[]> {
-  // This endpoint might not exist yet - we'll need to fetch comments differently
-  // For now, return empty array and we'll implement fetching in the component
-  return [];
+  const data: { comments: any[] } = await apiClient.get('/quote-comments', { params: { quoteId } });
+  // The backend returns { comments: [...] }
+  return (data.comments || []).map((c: any) => ({
+    id: c._id || c.id,
+    text: c.text,
+    user_name: c.user_name || '', // You may want to fetch user info if not present
+    reader_id: c.reader_id || '',
+    upvotes: c.upvotes || 0,
+    created_at: c.created_at,
+  }));
 }

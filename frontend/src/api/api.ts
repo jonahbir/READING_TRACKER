@@ -424,3 +424,25 @@ export async function getQuoteComments(quoteId: string): Promise<PostComment[]> 
     created_at: c.created_at,
   }));
 }
+
+
+// Change password (protected POST /change-password)
+export async function changePassword(passwordData: {
+  current_password: string;
+  new_password: string;
+}): Promise<{ message: string }> {
+  return apiClient.post('/change-password', passwordData);
+}
+
+// Forgot password API functions
+export async function forgotPassword(email: string): Promise<{ message: string }> {
+  return apiClient.post('/forgot-password', { email });
+}
+
+export async function verifyResetCode(email: string, code: string): Promise<{ message: string }> {
+  return apiClient.post('/verify-reset-code', { email, code });
+}
+
+export async function resetPassword(email: string, code: string, newPassword: string): Promise<{ message: string }> {
+  return apiClient.post('/reset-password', { email, code, new_password: newPassword });
+}

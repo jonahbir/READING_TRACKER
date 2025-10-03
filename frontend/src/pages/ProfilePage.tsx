@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
-import { getUserProfile } from '../api/api';
+import { getUserProfile, changePassword } from '../api/api';
 import { useParams, useNavigate } from 'react-router-dom';
 
 interface UserProfile {
@@ -32,6 +32,15 @@ const ProfilePage: React.FC = () => {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({
+    current_password: '',
+    new_password: '',
+    confirm_password: ''
+  });
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
 
   const isOwnProfile = !userId || userId === user?.id;
 
@@ -52,6 +61,54 @@ const ProfilePage: React.FC = () => {
       setError('Failed to load profile. Please try again.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError(null);
+    setPasswordSuccess(null);
+
+    // Validation
+    if (!passwordForm.current_password || !passwordForm.new_password || !passwordForm.confirm_password) {
+      setPasswordError('All fields are required');
+      return;
+    }
+
+    if (passwordForm.new_password !== passwordForm.confirm_password) {
+      setPasswordError('New passwords do not match');
+      return;
+    }
+
+    if (passwordForm.new_password.length < 6) {
+      setPasswordError('New password must be at least 6 characters long');
+      return;
+    }
+
+    try {
+      setChangingPassword(true);
+      await changePassword({
+        current_password: passwordForm.current_password,
+        new_password: passwordForm.new_password
+      });
+      
+      setPasswordSuccess('Password changed successfully!');
+      setPasswordForm({
+        current_password: '',
+        new_password: '',
+        confirm_password: ''
+      });
+      
+      // Close modal after success
+      setTimeout(() => {
+        setShowChangePassword(false);
+        setPasswordSuccess(null);
+      }, 2000);
+    } catch (error: any) {
+      console.error('Error changing password:', error);
+      setPasswordError(error.message || 'Failed to change password. Please try again.');
+    } finally {
+      setChangingPassword(false);
     }
   };
 
@@ -144,8 +201,25 @@ const ProfilePage: React.FC = () => {
 
             {/* Profile Info */}
             <div className="flex-1 text-center md:text-left">
-              <h1 className="text-4xl font-bold text-white mb-2">{profile.name}</h1>
-              <p className="text-blue-200 text-lg mb-2">@{profile.reader_id}</p>
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h1 className="text-4xl font-bold text-white mb-2">{profile.name}</h1>
+                  <p className="text-blue-200 text-lg mb-2">@{profile.reader_id}</p>
+                </div>
+                
+                {/* Change Password Button - Only show on own profile */}
+                {isOwnProfile && (
+                  <motion.button
+                    onClick={() => setShowChangePassword(true)}
+                    className="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors mt-4 md:mt-0"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    Change Password
+                  </motion.button>
+                )}
+              </div>
+              
               <div className="flex flex-wrap justify-center md:justify-start items-center gap-3 mb-4">
                 <span className={`px-4 py-2 bg-gradient-to-r ${getRankColor(profile.rank_score)} text-white rounded-full font-semibold`}>
                   {getRankTitle(profile.rank_score)}
@@ -206,6 +280,128 @@ const ProfilePage: React.FC = () => {
             </div>
           )}
         </motion.div>
+
+        {/* Change Password Modal */}
+        {showChangePassword && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="bg-gradient-to-b from-blue-900 to-black border border-white/20 rounded-lg p-6 w-full max-w-md"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-white">Change Password</h2>
+                <button
+                  onClick={() => {
+                    setShowChangePassword(false);
+                    setPasswordError(null);
+                    setPasswordSuccess(null);
+                    setPasswordForm({
+                      current_password: '',
+                      new_password: '',
+                      confirm_password: ''
+                    });
+                  }}
+                  className="text-blue-200 hover:text-white transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <form onSubmit={handleChangePassword} className="space-y-4">
+                {passwordError && (
+                  <div className="bg-red-500/20 border border-red-500 text-red-200 px-4 py-3 rounded-lg">
+                    {passwordError}
+                  </div>
+                )}
+
+                {passwordSuccess && (
+                  <div className="bg-green-500/20 border border-green-500 text-green-200 px-4 py-3 rounded-lg">
+                    {passwordSuccess}
+                  </div>
+                )}
+
+                <div>
+                  <label htmlFor="current_password" className="block text-blue-200 text-sm font-semibold mb-2">
+                    Current Password
+                  </label>
+                  <input
+                    type="password"
+                    id="current_password"
+                    value={passwordForm.current_password}
+                    onChange={(e) => setPasswordForm({ ...passwordForm, current_password: e.target.value })}
+                    className="w-full p-3 bg-white/20 text-white placeholder-blue-200 border border-white/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    placeholder="Enter current password"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="new_password" className="block text-blue-200 text-sm font-semibold mb-2">
+                    New Password
+                  </label>
+                  <input
+                    type="password"
+                    id="new_password"
+                    value={passwordForm.new_password}
+                    onChange={(e) => setPasswordForm({ ...passwordForm, new_password: e.target.value })}
+                    className="w-full p-3 bg-white/20 text-white placeholder-blue-200 border border-white/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    placeholder="Enter new password"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="confirm_password" className="block text-blue-200 text-sm font-semibold mb-2">
+                    Confirm New Password
+                  </label>
+                  <input
+                    type="password"
+                    id="confirm_password"
+                    value={passwordForm.confirm_password}
+                    onChange={(e) => setPasswordForm({ ...passwordForm, confirm_password: e.target.value })}
+                    className="w-full p-3 bg-white/20 text-white placeholder-blue-200 border border-white/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    placeholder="Confirm new password"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <motion.button
+                    type="button"
+                    onClick={() => {
+                      setShowChangePassword(false);
+                      setPasswordError(null);
+                      setPasswordSuccess(null);
+                      setPasswordForm({
+                        current_password: '',
+                        new_password: '',
+                        confirm_password: ''
+                      });
+                    }}
+                    className="flex-1 px-4 py-3 bg-gray-600 text-white rounded-lg font-semibold hover:bg-gray-700 transition-colors"
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    Cancel
+                  </motion.button>
+                  <motion.button
+                    type="submit"
+                    disabled={changingPassword}
+                    className={`flex-1 px-4 py-3 rounded-lg font-semibold transition-colors ${
+                      changingPassword
+                        ? 'bg-gray-500 cursor-not-allowed text-gray-300'
+                        : 'bg-blue-600 hover:bg-blue-700 text-white'
+                    }`}
+                    whileHover={!changingPassword ? { scale: 1.02 } : {}}
+                    whileTap={!changingPassword ? { scale: 0.98 } : {}}
+                  >
+                    {changingPassword ? 'Changing...' : 'Change Password'}
+                  </motion.button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
 
         {/* Badges Section */}
         <motion.div

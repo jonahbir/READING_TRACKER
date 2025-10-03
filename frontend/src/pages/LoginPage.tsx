@@ -61,72 +61,140 @@ const Login: React.FC = () => {
     },
     hover: {
       scale: 1.05,
-      color: '#a5b4fc',
+      color: '#93c5fd',
       transition: { duration: 0.3 },
     },
   };
 
   return (
-    <section className="py-20 bg-gradient-to-b from-indigo-950 to-indigo-900 min-h-screen">
-      <div className="max-w-md mx-auto px-4 sm:px-6 lg:px-8">
-        <motion.h2
-          className="text-4xl font-extrabold text-white mb-8 text-center tracking-tight"
-          initial="hidden"
-          whileInView="visible"
-          whileHover="hover"
-          viewport={{ once: true }}
-          variants={titleVariants}
+    <div className="min-h-screen bg-gradient-to-b from-blue-900 to-black">
+      <div className="container mx-auto px-4 py-8">
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="max-w-md mx-auto"
         >
-          Log In
-        </motion.h2>
-        {error && <div className="mb-4 text-center text-red-400">{error}</div>}
-        {success && <div className="mb-4 text-center text-emerald-400">{success}</div>}
-        <form onSubmit={handleSubmit} className="bg-indigo-800 p-8 rounded-lg shadow-lg">
-          <div className="mb-4">
-            <label htmlFor="email" className="block text-gray-200 mb-2">Email</label>
-            <input
-              type="email"
-              id="email"
-              className="w-full px-4 py-2 bg-indigo-900 text-white border border-indigo-700 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-400"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-          </div>
-          <div className="mb-6">
-            <label htmlFor="password" className="block text-gray-200 mb-2">Password</label>
-            <input
-              type="password"
-              id="password"
-              className="w-full px-4 py-2 bg-indigo-900 text-white border border-indigo-700 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-400"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-          </div>
-          <motion.button
-            type="submit"
-            disabled={loading}
-            className={`w-full py-3 text-white rounded-md transition-colors duration-300 ${
-              loading 
-                ? 'bg-gray-400 cursor-not-allowed' 
-                : 'bg-emerald-500 hover:bg-emerald-600'
-            }`}
-            whileHover={!loading ? { scale: 1.05 } : {}}
-            whileTap={!loading ? { scale: 0.98 } : {}}
+          <motion.h2
+            className="text-4xl font-bold text-white mb-2 text-center"
+            initial="hidden"
+            whileInView="visible"
+            whileHover="hover"
+            viewport={{ once: true }}
+            variants={titleVariants}
           >
-            {loading ? 'Logging in...' : 'Log In'}
-          </motion.button>
-        </form>
-        <div className="mt-4 text-center">
-          <p className="text-gray-300">
-            Don't have an account? <Link to="/register" className="text-indigo-400 hover:underline">Register</Link>
-          </p>
-        </div>
+            Welcome Back!
+          </motion.h2>
+          <p className="text-blue-200 text-center mb-8">Sign in to continue your reading journey</p>
+
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-red-500/20 border border-red-500 text-red-200 px-4 py-3 rounded-lg mb-6"
+            >
+              {error}
+            </motion.div>
+          )}
+
+          {success && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-green-500/20 border border-green-500 text-green-200 px-4 py-3 rounded-lg mb-6"
+            >
+              {success}
+            </motion.div>
+          )}
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="bg-white/10 backdrop-blur-sm rounded-lg p-8"
+          >
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div>
+                <label htmlFor="email" className="block text-blue-200 text-sm font-semibold mb-2">
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  id="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full p-3 bg-white/20 text-white placeholder-blue-200 border border-white/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  placeholder="Enter your email"
+                  required
+                />
+              </div>
+
+              <div>
+                <label htmlFor="password" className="block text-blue-200 text-sm font-semibold mb-2">
+                  Password
+                </label>
+                <input
+                  type="password"
+                  id="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full p-3 bg-white/20 text-white placeholder-blue-200 border border-white/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  placeholder="Enter your password"
+                  required
+                />
+              </div>
+
+              <motion.button
+                type="submit"
+                disabled={loading}
+                className={`w-full py-3 rounded-lg font-semibold transition-colors ${
+                  loading
+                    ? 'bg-gray-500 cursor-not-allowed text-gray-300'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+                }`}
+                whileHover={!loading ? { scale: 1.02 } : {}}
+                whileTap={!loading ? { scale: 0.98 } : {}}
+              >
+                {loading ? (
+                  <div className="flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                    Logging in...
+                  </div>
+                ) : (
+                  'Log In'
+                )}
+              </motion.button>
+            </form>
+
+            <div className="mt-6 text-center">
+              <Link
+                to="/forgot-password"
+                className="text-blue-300 hover:text-blue-200 transition-colors font-medium"
+              >
+                Forgot your password?
+              </Link>
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="text-center mt-6"
+          >
+            <p className="text-blue-200">
+              Don't have an account?{' '}
+              <Link 
+                to="/register" 
+                className="text-white font-semibold hover:text-blue-200 transition-colors underline"
+              >
+                Create one here
+              </Link>
+            </p>
+          </motion.div>
+        </motion.div>
       </div>
-    </section>
+    </div>
   );
 };
-
 
 export default Login;

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom'; // Import Link from react-router-dom
+import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { registerUser } from './../api/api'; // Adjust path as needed
+import { registerUser } from './../api/api';
 
 const Register: React.FC = () => {
   const [email, setEmail] = useState<string>('');
@@ -12,15 +12,18 @@ const Register: React.FC = () => {
   const [educationalStatus, setEducationalStatus] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSuccess(null);
+    setLoading(true);
 
     if (!email || !password || !name || !insaBatch || !dormNumber || !educationalStatus) {
       setError('All fields are required.');
+      setLoading(false);
       return;
     }
 
@@ -38,6 +41,8 @@ const Register: React.FC = () => {
       setTimeout(() => navigate('/'), 3000);
     } catch (err: any) {
       setError(err.message || 'Registration failed. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -50,109 +55,190 @@ const Register: React.FC = () => {
     },
     hover: {
       scale: 1.05,
-      color: '#a5b4fc',
+      color: '#93c5fd',
       transition: { duration: 0.3 },
     },
   };
 
   return (
-    <section className="py-20 bg-gradient-to-b from-indigo-950 to-indigo-900 min-h-screen">
-      <div className="max-w-md mx-auto px-4 sm:px-6 lg:px-8">
-        <motion.h2
-          className="text-4xl font-extrabold text-white mb-8 text-center tracking-tight"
-          initial="hidden"
-          whileInView="visible"
-          whileHover="hover"
-          viewport={{ once: true }}
-          variants={titleVariants}
+    <div className="min-h-screen bg-gradient-to-b from-blue-900 to-black">
+      <div className="container mx-auto px-4 py-8">
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="max-w-md mx-auto"
         >
-          Register
-        </motion.h2>
-        {error && <div className="mb-4 text-center text-red-400">{error}</div>}
-        {success && <div className="mb-4 text-center text-emerald-400">{success}</div>}
-        <form onSubmit={handleSubmit} className="bg-indigo-800 p-8 rounded-lg shadow-lg">
-          <div className="mb-4">
-            <label htmlFor="name" className="block text-gray-200 mb-2">Name</label>
-            <input
-              type="text"
-              id="name"
-              className="w-full px-4 py-2 bg-indigo-900 text-white border border-indigo-700 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-400"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
-          </div>
-          <div className="mb-4">
-            <label htmlFor="email" className="block text-gray-200 mb-2">Email</label>
-            <input
-              type="email"
-              id="email"
-              className="w-full px-4 py-2 bg-indigo-900 text-white border border-indigo-700 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-400"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-          </div>
-          <div className="mb-4">
-            <label htmlFor="password" className="block text-gray-200 mb-2">Password</label>
-            <input
-              type="password"
-              id="password"
-              className="w-full px-4 py-2 bg-indigo-900 text-white border border-indigo-700 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-400"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-          </div>
-          <div className="mb-4">
-            <label htmlFor="insaBatch" className="block text-gray-200 mb-2">INSA Batch</label>
-            <input
-              type="text"
-              id="insaBatch"
-              className="w-full px-4 py-2 bg-indigo-900 text-white border border-indigo-700 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-400"
-              value={insaBatch}
-              onChange={(e) => setInsaBatch(e.target.value)}
-              required
-            />
-          </div>
-          <div className="mb-4">
-            <label htmlFor="dormNumber" className="block text-gray-200 mb-2">Dorm Number</label>
-            <input
-              type="text"
-              id="dormNumber"
-              className="w-full px-4 py-2 bg-indigo-900 text-white border border-indigo-700 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-400"
-              value={dormNumber}
-              onChange={(e) => setDormNumber(e.target.value)}
-              required
-            />
-          </div>
-          <div className="mb-6">
-            <label htmlFor="educationalStatus" className="block text-gray-200 mb-2">Educational Status</label>
-            <input
-              type="text"
-              id="educationalStatus"
-              className="w-full px-4 py-2 bg-indigo-900 text-white border border-indigo-700 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-400"
-              value={educationalStatus}
-              onChange={(e) => setEducationalStatus(e.target.value)}
-              required
-            />
-          </div>
-          <motion.button
-            type="submit"
-            className="w-full py-3 bg-emerald-500 text-white rounded-md hover:bg-emerald-600 transition-colors duration-300"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.98 }}
+          <motion.h2
+            className="text-4xl font-bold text-white mb-2 text-center"
+            initial="hidden"
+            whileInView="visible"
+            whileHover="hover"
+            viewport={{ once: true }}
+            variants={titleVariants}
           >
-            Register
-          </motion.button>
-        </form>
-        <div className="mt-4 text-center">
-          <p className="text-gray-300">
-            Already have an account? <Link to="/login" className="text-indigo-400 hover:underline">Log in</Link>
-          </p>
-        </div>
+            Join Our Community
+          </motion.h2>
+          <p className="text-blue-200 text-center mb-8">Create your account to start your reading journey</p>
+
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-red-500/20 border border-red-500 text-red-200 px-4 py-3 rounded-lg mb-6"
+            >
+              {error}
+            </motion.div>
+          )}
+
+          {success && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-green-500/20 border border-green-500 text-green-200 px-4 py-3 rounded-lg mb-6"
+            >
+              {success}
+            </motion.div>
+          )}
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="bg-white/10 backdrop-blur-sm rounded-lg p-8"
+          >
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label htmlFor="name" className="block text-blue-200 text-sm font-semibold mb-2">
+                  Full Name
+                </label>
+                <input
+                  type="text"
+                  id="name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full p-3 bg-white/20 text-white placeholder-blue-200 border border-white/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  placeholder="Enter your full name"
+                  required
+                />
+              </div>
+
+              <div>
+                <label htmlFor="email" className="block text-blue-200 text-sm font-semibold mb-2">
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  id="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full p-3 bg-white/20 text-white placeholder-blue-200 border border-white/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  placeholder="Enter your email"
+                  required
+                />
+              </div>
+
+              <div>
+                <label htmlFor="password" className="block text-blue-200 text-sm font-semibold mb-2">
+                  Password
+                </label>
+                <input
+                  type="password"
+                  id="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full p-3 bg-white/20 text-white placeholder-blue-200 border border-white/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  placeholder="Create a password"
+                  required
+                />
+              </div>
+
+              <div>
+                <label htmlFor="insaBatch" className="block text-blue-200 text-sm font-semibold mb-2">
+                  INSA Batch
+                </label>
+                <input
+                  type="text"
+                  id="insaBatch"
+                  value={insaBatch}
+                  onChange={(e) => setInsaBatch(e.target.value)}
+                  className="w-full p-3 bg-white/20 text-white placeholder-blue-200 border border-white/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  placeholder="Enter your INSA batch"
+                  required
+                />
+              </div>
+
+              <div>
+                <label htmlFor="dormNumber" className="block text-blue-200 text-sm font-semibold mb-2">
+                  Dorm Number
+                </label>
+                <input
+                  type="text"
+                  id="dormNumber"
+                  value={dormNumber}
+                  onChange={(e) => setDormNumber(e.target.value)}
+                  className="w-full p-3 bg-white/20 text-white placeholder-blue-200 border border-white/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  placeholder="Enter your dorm number"
+                  required
+                />
+              </div>
+
+              <div>
+                <label htmlFor="educationalStatus" className="block text-blue-200 text-sm font-semibold mb-2">
+                  Educational Status
+                </label>
+                <input
+                  type="text"
+                  id="educationalStatus"
+                  value={educationalStatus}
+                  onChange={(e) => setEducationalStatus(e.target.value)}
+                  className="w-full p-3 bg-white/20 text-white placeholder-blue-200 border border-white/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  placeholder="Enter your educational status"
+                  required
+                />
+              </div>
+
+              <motion.button
+                type="submit"
+                disabled={loading}
+                className={`w-full py-3 rounded-lg font-semibold transition-colors ${
+                  loading
+                    ? 'bg-gray-500 cursor-not-allowed text-gray-300'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+                }`}
+                whileHover={!loading ? { scale: 1.02 } : {}}
+                whileTap={!loading ? { scale: 0.98 } : {}}
+              >
+                {loading ? (
+                  <div className="flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                    Creating Account...
+                  </div>
+                ) : (
+                  'Create Account'
+                )}
+              </motion.button>
+            </form>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="text-center mt-6"
+          >
+            <p className="text-blue-200">
+              Already have an account?{' '}
+              <Link 
+                to="/login" 
+                className="text-white font-semibold hover:text-blue-200 transition-colors underline"
+              >
+                Sign in here
+              </Link>
+            </p>
+          </motion.div>
+        </motion.div>
       </div>
-    </section>
+    </div>
   );
 };
 

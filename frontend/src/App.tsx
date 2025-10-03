@@ -19,6 +19,7 @@ import ReadingProgressPage from './pages/ReadingProgressPage';
 import BooksPage from './pages/BooksPage';
 import NotificationsPage from './pages/NotificationsPage';
 import ProfilePage from './pages/ProfilePage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
 const App: React.FC = () => {
   return (
     <AuthProvider>
@@ -35,6 +36,7 @@ const App: React.FC = () => {
               <Route path="/leaderboard" element={<Leaderboard />} />
               <Route path="/register" element={<Register />} />
               <Route path="/login" element={<Login />} />
+              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
               <Route path="/reviews" element={<PublicReviews />} />
               <Route path="/search-quotes" element={<PublicQuotes />} />
               

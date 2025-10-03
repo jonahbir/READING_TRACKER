@@ -38,6 +38,17 @@ interface PostComment {
   created_at: string;
 }
 
+// Extended Review interface to include _id
+interface ReviewWithId {
+  id?: string;
+  _id?: string;
+  reader_id: string;
+  review_text: string;
+  upvotes: number;
+  created_at: string;
+  user_name?: string;
+}
+
 const PostsPage: React.FC = () => {
   const { user, isLoggedIn } = useAuth();
   const [posts, setPosts] = useState<Post[]>([]);
@@ -69,12 +80,12 @@ const PostsPage: React.FC = () => {
       // Merge and sort posts by creation time
       const allPosts: Post[] = [
         ...reviews
-          .filter((review) => !!review.id)
-          .map(review => ({
-            id: review.id as string, // type-safe
+          .filter((review: ReviewWithId) => !!review.id || !!review._id)
+          .map((review: ReviewWithId) => ({
+            id: review.id || review._id || '',
             type: 'review' as const,
             content: review.review_text,
-            user_name: review.user_name || review.reader_id, // Use user_name if available
+            user_name: review.user_name || review.reader_id,
             reader_id: review.reader_id,
             upvotes: review.upvotes,
             created_at: review.created_at,
@@ -167,9 +178,9 @@ const PostsPage: React.FC = () => {
       ]);
 
       const searchResults: Post[] = [
-        ...(reviewsResponse.reviews ?? []).filter((review) => !!review.id)
-          .map(review => ({
-            id: review.id as string, // In searchResults and anywhere else reviews are mapped, use review.id only
+        ...(reviewsResponse.reviews ?? []).filter((review: ReviewWithId) => !!review.id || !!review._id)
+          .map((review: ReviewWithId) => ({
+            id: review.id || review._id || '',
             type: 'review' as const,
             content: review.review_text,
             user_name: review.user_name || review.reader_id,

@@ -12,6 +12,23 @@ interface Notification {
   created_at: string;
 }
 
+// Extended interface for backend response
+interface BackendNotification {
+  UserID?: string;
+  ActorID?: string;
+  TargetID?: string;
+  Type?: string;
+  Seen?: boolean;
+  CreatedAt?: string;
+  // Frontend fields
+  user_id?: string;
+  actor_id?: string;
+  target_id?: string;
+  type?: string;
+  seen?: boolean;
+  created_at?: string;
+}
+
 const NotificationsPage: React.FC = () => {
   const { user, isLoggedIn } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -28,7 +45,18 @@ const NotificationsPage: React.FC = () => {
     try {
       setLoading(true);
       const response = await getNotifications();
-      setNotifications(response.notifications || []);
+      
+      // Transform the notifications to match the expected interface
+      const transformedNotifications = (response.notifications || []).map((notif: BackendNotification) => ({
+        user_id: notif.UserID || notif.user_id || '',
+        actor_id: notif.ActorID || notif.actor_id || '',
+        target_id: notif.TargetID || notif.target_id || '',
+        type: notif.Type || notif.type || '',
+        seen: notif.Seen !== undefined ? notif.Seen : (notif.seen !== undefined ? notif.seen : false),
+        created_at: notif.CreatedAt || notif.created_at || ''
+      }));
+      
+      setNotifications(transformedNotifications);
     } catch (error) {
       console.error('Error loading notifications:', error);
     } finally {
@@ -103,7 +131,9 @@ const NotificationsPage: React.FC = () => {
   };
 
   const getNotificationMessage = (notification: Notification) => {
-    switch (notification.type) {
+    const type = notification.type || '';
+    
+    switch (type) {
       case 'upvote_quote':
         return 'Someone liked your quote';
       case 'upvote_review':
@@ -260,13 +290,13 @@ const NotificationsPage: React.FC = () => {
                       
                       {/* Notification Type Badge */}
                       <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                        notification.type.includes('upvote') 
+                        notification.type && notification.type.includes('upvote') 
                           ? 'bg-red-600 text-white'
-                          : notification.type.includes('comment')
+                          : notification.type && notification.type.includes('comment')
                           ? 'bg-blue-600 text-white'
                           : 'bg-gray-600 text-white'
                       }`}>
-                        {notification.type.replace('_', ' ').toUpperCase()}
+                        {notification.type ? notification.type.replace('_', ' ').toUpperCase() : 'UNKNOWN'}
                       </span>
                     </div>
                   </div>

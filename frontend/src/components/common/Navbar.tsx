@@ -105,6 +105,8 @@ const Navbar: React.FC = () => {
 
   // Mobile menu items data - dynamic based on login status
   const mobileMenuItems = isLoggedIn ? [
+    { to: '/announcements', label: 'Announcements', onClick: toggleMenu },
+    { to: '/submit-book', label: 'Submit Book', onClick: toggleMenu },
     { to: '/posts', label: 'Posts', onClick: toggleMenu },
     { to: '/reading-progress', label: 'Reading Progress', onClick: toggleMenu },
     { to: '/books', label: 'Books', onClick: toggleMenu },
@@ -162,7 +164,7 @@ const Navbar: React.FC = () => {
             {isLoggedIn ? (
               // Logged-in navigation
               <>
-                {['posts', 'reading-progress', 'books', 'notifications', 'profile', 'leaderboard'].map((page) => (
+                {['announcements', 'submit-book', 'posts', 'reading-progress', 'books', 'notifications', 'profile', 'leaderboard'].map((page) => (
                   <Link
                     key={page}
                     to={`/${page}`}

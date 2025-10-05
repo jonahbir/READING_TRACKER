@@ -188,7 +188,7 @@ const ProfilePage: React.FC = () => {
             {/* Avatar */}
             <div className="relative">
               <div className={`w-32 h-32 bg-gradient-to-r ${getRankColor(profile.rank_score)} rounded-full flex items-center justify-center text-white text-4xl font-bold shadow-lg`}>
-                {profile.name.charAt(0).toUpperCase()}
+                {(profile.name || 'U').charAt(0).toUpperCase()}
               </div>
               <div className="absolute -bottom-2 -right-2 bg-white rounded-full p-2 shadow-lg">
                 <div className={`w-8 h-8 bg-gradient-to-r ${getRankColor(profile.rank_score)} rounded-full flex items-center justify-center`}>
@@ -203,8 +203,8 @@ const ProfilePage: React.FC = () => {
             <div className="flex-1 text-center md:text-left">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between">
                 <div>
-                  <h1 className="text-4xl font-bold text-white mb-2">{profile.name}</h1>
-                  <p className="text-blue-200 text-lg mb-2">@{profile.reader_id}</p>
+                  <h1 className="text-4xl font-bold text-white mb-2">{profile.name || 'Unknown User'}</h1>
+                  <p className="text-blue-200 text-lg mb-2">@{profile.reader_id || 'unknown'}</p>
                 </div>
                 
                 {/* Change Password Button - Only show on own profile */}
@@ -224,23 +224,25 @@ const ProfilePage: React.FC = () => {
                 <span className={`px-4 py-2 bg-gradient-to-r ${getRankColor(profile.rank_score)} text-white rounded-full font-semibold`}>
                   {getRankTitle(profile.rank_score)}
                 </span>
-                <span className="px-4 py-2 bg-white/20 text-white rounded-full font-semibold">
-                  {profile.class_tag}
-                </span>
+                {profile.class_tag && (
+                  <span className="px-4 py-2 bg-white/20 text-white rounded-full font-semibold">
+                    {profile.class_tag}
+                  </span>
+                )}
               </div>
               
               {/* Stats */}
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-6">
                 <div className="text-center">
-                  <div className="text-3xl font-bold text-white">{profile.rank_score}</div>
+                  <div className="text-3xl font-bold text-white">{profile.rank_score || 0}</div>
                   <div className="text-blue-200 text-sm">Rank Score</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-3xl font-bold text-white">{profile.books_read}</div>
+                  <div className="text-3xl font-bold text-white">{profile.books_read || 0}</div>
                   <div className="text-blue-200 text-sm">Books Read</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-3xl font-bold text-white">{profile.badges.length}</div>
+                  <div className="text-3xl font-bold text-white">{profile.badges?.length || 0}</div>
                   <div className="text-blue-200 text-sm">Badges</div>
                 </div>
               </div>
@@ -411,7 +413,7 @@ const ProfilePage: React.FC = () => {
           className="bg-white/10 backdrop-blur-sm rounded-lg p-6 mb-8"
         >
           <h2 className="text-2xl font-bold text-white mb-6">Achievements & Badges</h2>
-          {profile.badges.length > 0 ? (
+          {profile.badges && profile.badges.length > 0 ? (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
               {profile.badges.map((badge, index) => (
                 <motion.div
@@ -455,7 +457,7 @@ const ProfilePage: React.FC = () => {
           <h2 className="text-2xl font-bold text-white mb-6">
             {isOwnProfile ? 'Your Borrow History' : 'Borrow History'}
           </h2>
-          {profile.borrow_history.length > 0 ? (
+          {profile.borrow_history && profile.borrow_history.length > 0 ? (
             <div className="space-y-4">
               {profile.borrow_history.map((entry, index) => (
                 <motion.div

@@ -20,6 +20,8 @@ import BooksPage from './pages/BooksPage';
 import NotificationsPage from './pages/NotificationsPage';
 import ProfilePage from './pages/ProfilePage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import AnnouncementsPage from './pages/AnnouncementsPage';
+import SubmitBookPage from './pages/SubmitBookPage';
 const App: React.FC = () => {
   return (
     <AuthProvider>
@@ -41,6 +43,8 @@ const App: React.FC = () => {
               <Route path="/search-quotes" element={<PublicQuotes />} />
               
               {/* Logged-in user routes */}
+              <Route path="/announcements" element={<AnnouncementsPage />} />
+              <Route path="/submit-book" element={<SubmitBookPage />} />
               <Route path="/posts" element={<PostsPage />} />
               <Route path="/reading-progress" element={<ReadingProgressPage />} />
               <Route path="/books" element={<BooksPage />} />

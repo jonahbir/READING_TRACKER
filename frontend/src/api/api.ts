@@ -446,3 +446,83 @@ export async function verifyResetCode(email: string, code: string): Promise<{ me
 export async function resetPassword(email: string, code: string, newPassword: string): Promise<{ message: string }> {
   return apiClient.post('/reset-password', { email, code, new_password: newPassword });
 }
+
+// Announcement API functions
+export interface Announcement {
+  id: string;
+  title: string;
+  content: string;
+  author_name: string;
+  created_at: string;
+  priority: 'low' | 'medium' | 'high';
+  is_active: boolean;
+}
+
+export async function getAnnouncements(limit?: number): Promise<{ announcements: Announcement[]; count: number }> {
+  const params = limit ? { limit: limit.toString() } : {};
+  return apiClient.get('/announcements', { params });
+}
+
+export async function createAnnouncement(announcement: { title: string; content: string; priority?: string }): Promise<{ message: string; announcement_id: string }> {
+  return apiClient.post('/announcements', announcement);
+}
+
+export async function updateAnnouncement(id: string, announcement: { title?: string; content?: string; priority?: string; is_active?: boolean }): Promise<{ message: string }> {
+  return apiClient.put(`/announcements?id=${id}`, announcement);
+}
+
+export async function deleteAnnouncement(id: string): Promise<{ message: string }> {
+  return apiClient.delete(`/announcements?id=${id}`);
+}
+
+// Pending Book API functions
+export interface PendingBook {
+  id: string;
+  title: string;
+  author: string;
+  isbn: string;
+  genre: string;
+  type: 'hardcopy' | 'softcopy';
+  physical_location: string;
+  phone_number_of_the_handler: string;
+  softcopy_url: string;
+  about_the_book: string;
+  total_pages: number;
+  submitted_by_name: string;
+  submitted_by_reader_id: string;
+  submitted_at: string;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewed_at?: string;
+  rejection_reason?: string;
+}
+
+export async function submitBookToCommunity(book: {
+  title: string;
+  author: string;
+  isbn?: string;
+  genre?: string;
+  type: 'hardcopy' | 'softcopy';
+  physical_location?: string;
+  phone_number_of_the_handler?: string;
+  softcopy_url?: string;
+  about_the_book?: string;
+  total_pages?: number;
+}): Promise<{ message: string; submission_id: string }> {
+  return apiClient.post('/submit-book', book);
+}
+
+export async function getPendingBooks(status?: string, limit?: number): Promise<{ pending_books: PendingBook[]; count: number }> {
+  const params: Record<string, string> = {};
+  if (status) params.status = status;
+  if (limit) params.limit = limit.toString();
+  
+  return apiClient.get('/pending-books', { params });
+}
+
+export async function approvePendingBook(pendingBookId: string): Promise<{ message: string; book_id: string }> {
+  return apiClient.post('/approve-book', { pending_book_id: pendingBookId });
+}
+
+export async function rejectPendingBook(pendingBookId: string, rejectionReason: string): Promise<{ message: string }> {
+  return apiClient.post('/reject-book', { pending_book_id: pendingBookId, rejection_reason: rejectionReason });
+}

@@ -42,9 +42,9 @@ const Login: React.FC = () => {
         class_tag: userProfile.class_tag
       });
       
-      setSuccess('Login successful! Redirecting to Posts...');
-      // Redirect to Posts page after successful login
-      setTimeout(() => navigate('/posts'), 1500);
+      setSuccess('Login successful! Redirecting to Announcements...');
+      // Redirect to Announcements page after successful login
+      setTimeout(() => navigate('/announcements'), 1500);
     } catch (err: any) {
       setError(err.message || 'Login failed. Please check your credentials.');
     } finally {

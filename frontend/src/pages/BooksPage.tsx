@@ -61,7 +61,7 @@ const BooksPage: React.FC = () => {
         getBorrowHistory().catch(() => []) // Handle case where user has no borrow history
       ]);
       setBooks(booksData);
-      setBorrowHistory(historyData);
+      setBorrowHistory(Array.isArray(historyData) ? historyData : []);
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -203,7 +203,7 @@ const BooksPage: React.FC = () => {
         </motion.div>
 
         {/* Borrowed Books Section */}
-        {borrowHistory.length > 0 && (
+        {Array.isArray(borrowHistory) && borrowHistory.length > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}

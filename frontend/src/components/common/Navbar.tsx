@@ -309,7 +309,7 @@ const Navbar: React.FC = () => {
                   className="relative group"
                 >
                   <motion.span
-                    className="relative inline-block px-6 py-2 bg-red-600 text-white font-medium rounded-lg shadow-md"
+                    className="relative inline-block px-6 py-2 bg-red-600 text-white text-sm font-medium rounded-lg shadow-md"
                     whileHover="hover"
                     whileTap="tap"
                     variants={navItemVariants}
@@ -470,7 +470,7 @@ const Navbar: React.FC = () => {
                 </div>
                 <motion.button
                   onClick={handleLogout}
-                  className="block w-full bg-red-600 text-white px-3 py-3 rounded-lg font-medium text-center"
+                  className="block w-full bg-red-600 text-white text-sm px-3 py-3 rounded-lg font-medium text-center"
                 >
                   <motion.span
                     whileHover={{ scale: 1.05 }}

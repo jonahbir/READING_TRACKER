@@ -82,8 +82,9 @@ const ExploreBooks: React.FC = () => {
     try {
       let response;
       if (book.BorrowedBy === userId && !book.Available) {
-        // Return book
-        response = await returnBook(book.ISBN);
+        // Return book requires reader_id
+        const readerId = localStorage.getItem('reader_id') || '';
+        response = await returnBook(book.ISBN, readerId);
         alert(response.message);
       } else if (book.Available) {
         // Borrow book

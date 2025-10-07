@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { loginUser, getUserProfile } from './../api/api';
+import { loginUser, getUserProfile, checkAdmin } from './../api/api';
 import { useAuth } from '../context/AuthContext';
 
 const Login: React.FC = () => {
@@ -31,20 +31,29 @@ const Login: React.FC = () => {
       
       // Fetch user profile after successful login
       const userProfile = await getUserProfile();
+      let role: 'admin' | 'user' = 'user';
+      // Probe admin permission via /analytics
+      const isAdmin = await checkAdmin();
+      if (isAdmin) role = 'admin';
+
       setUser({
         id: userProfile.reader_id,
         name: userProfile.name,
         email: userProfile.email || email,
         reader_id: userProfile.reader_id,
-        role: 'student', // Default role, could be extracted from token if needed
+        role,
         rank_score: userProfile.rank_score,
         books_read: userProfile.books_read,
         class_tag: userProfile.class_tag
       });
       
-      setSuccess('Login successful! Redirecting to Announcements...');
-      // Redirect to Announcements page after successful login
-      setTimeout(() => navigate('/announcements'), 1500);
+      if (role === 'admin') {
+        setSuccess('Welcome, Admin! Redirecting to Dashboard...');
+        setTimeout(() => navigate('/admin'), 800);
+      } else {
+        setSuccess('Login successful! Redirecting to Announcements...');
+        setTimeout(() => navigate('/announcements'), 800);
+      }
     } catch (err: any) {
       setError(err.message || 'Login failed. Please check your credentials.');
     } finally {

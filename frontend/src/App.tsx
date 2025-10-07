@@ -1,6 +1,8 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import Navbar from './components/common/Navbar';
+import AdminLayout from './components/admin/AdminLayout';
+import { AdminGuard, DashboardPage, BooksPage as AdminBooksPage, UsersPage as AdminUsersPage, ModerationPage as AdminModerationPage, LeaderboardAdminPage as AdminLeaderboardPage, AdminProfilePage as AdminProfile, AdminAnnouncementsPage as AdminAnnouncements } from './pages/admin';
 import Footer from './components/common/Footer';
 import { AuthProvider } from './context/AuthContext';
 
@@ -22,12 +24,12 @@ import ProfilePage from './pages/ProfilePage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import AnnouncementsPage from './pages/AnnouncementsPage';
 import SubmitBookPage from './pages/SubmitBookPage';
-const App: React.FC = () => {
+const AppShell: React.FC = () => {
+  const location = useLocation();
+  const isAdminRoute = location.pathname.startsWith('/admin');
   return (
-    <AuthProvider>
-      <Router>
-        <div className="min-h-screen flex flex-col bg-white">
-          <Navbar />
+    <div className="min-h-screen flex flex-col bg-white">
+      {!isAdminRoute && <Navbar />}
          
           <main className="flex-grow relative">
             <Routes>
@@ -51,10 +53,32 @@ const App: React.FC = () => {
               <Route path="/notifications" element={<NotificationsPage />} />
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="/profile/:userId" element={<ProfilePage />} />
+
+              {/* Admin routes */}
+              <Route element={<AdminGuard />}>
+                <Route path="/admin" element={<AdminLayout />}>
+                  <Route index element={<DashboardPage />} />
+                  <Route path="books" element={<AdminBooksPage />} />
+                  <Route path="users" element={<AdminUsersPage />} />
+                  <Route path="moderation" element={<AdminModerationPage />} />
+                  <Route path="leaderboard" element={<AdminLeaderboardPage />} />
+                  <Route path="profile" element={<AdminProfile />} />
+                  <Route path="announcements" element={<AdminAnnouncements />} />
+                  
+                </Route>
+              </Route>
             </Routes>
           </main>
-          <Footer />
-        </div>
+      {!isAdminRoute && <Footer />}
+    </div>
+  );
+};
+
+const App: React.FC = () => {
+  return (
+    <AuthProvider>
+      <Router>
+        <AppShell />
       </Router>
     </AuthProvider>
   );

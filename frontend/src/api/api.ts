@@ -238,8 +238,8 @@ export async function borrowBook(isbn: string): Promise<BorrowResponse> {
 }
 
 // Return book (protected POST /return)
-export async function returnBook(isbn: string): Promise<ReturnResponse> {
-  return apiClient.post('/return', { isbn });
+export async function returnBook(isbn: string, readerId: string): Promise<ReturnResponse> {
+  return apiClient.post('/return-book', { isbn, reader_id: readerId });
 }
 
 // Add softcopy to reading (protected POST /add-soft-to-reading)
@@ -250,11 +250,12 @@ export async function addSoftToReading(isbn: string): Promise<AddSoftResponse> {
 // Fetch leaderboard (public GET /leader-board)
 export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
   try {
-    const data: LeaderboardResponse = await apiClient.get('/leader-board');
-    console.log('Raw leaderboard response:', data);
-    return data.leaderboard || [];
-  } catch (error) {
-    throw error;
+    // Backend route is /leader-board; try that first, then fallback to /leaderboard
+    const dataPrimary: LeaderboardResponse = await apiClient.get('/leader-board');
+    return dataPrimary.leaderboard || [];
+  } catch (_e) {
+    const dataFallback: LeaderboardResponse = await apiClient.get('/leaderboard');
+    return dataFallback.leaderboard || [];
   }
 }
 
@@ -315,6 +316,11 @@ export async function submitReview(reviewData: {
   review_text: string;
 }): Promise<{ message: string }> {
   return apiClient.post('/submit-review', reviewData);
+}
+
+// Admin: approve/reject review (POST /approve-review)
+export async function approveReview(payload: { review_id: string; status: 'approved' | 'rejected' }): Promise<{ message: string }> {
+  return apiClient.post('/approve-review', payload);
 }
 
 // Add quote (protected POST /add-quote)
@@ -390,6 +396,37 @@ export async function searchQuotes(query?: string, userId?: string): Promise<Quo
 // Get book readers (admin GET /check-book-readers)
 export async function getBookReaders(isbn: string): Promise<{ isbn: string; active_readers: any[] }> {
   return apiClient.get('/check-book-readers', { data: { isbn } });
+}
+
+// Admin: add a new book (POST /add-book)
+export async function addBook(book: {
+  title: string;
+  author: string;
+  isbn: string;
+  genre?: string;
+  type: 'hardcopy' | 'softcopy';
+  physical_location?: string;
+  phone_number_of_the_handler?: string;
+  softcopy_url?: string;
+  about_the_book?: string;
+  total_pages?: number;
+}): Promise<{ message: string }> {
+  return apiClient.post('/add-book', book);
+}
+
+// Admin: update a book (POST /book-update)
+export async function updateBook(bookUpdate: {
+  isbn: string;
+  title?: string;
+  author?: string;
+  type?: 'hardcopy' | 'softcopy';
+  physical_location?: string;
+  phone_number_of_the_handler?: string;
+  softcopy_url?: string;
+  about_the_book?: string;
+  total_pages?: number;
+}): Promise<{ message: string }> {
+  return apiClient.post('/book-update', bookUpdate);
 }
 
 // Get user borrow history (protected GET /user-borrow-history)
@@ -475,6 +512,16 @@ export async function deleteAnnouncement(id: string): Promise<{ message: string 
   return apiClient.delete(`/announcements?id=${id}`);
 }
 
+// Admin check via GET /analytics
+export async function checkAdmin(): Promise<boolean> {
+  try {
+    await apiClient.get('/analytics', { params: { limit: 1 } });
+    return true;
+  } catch (_e) {
+    return false;
+  }
+}
+
 // Pending Book API functions
 export interface PendingBook {
   id: string;
@@ -525,4 +572,24 @@ export async function approvePendingBook(pendingBookId: string): Promise<{ messa
 
 export async function rejectPendingBook(pendingBookId: string, rejectionReason: string): Promise<{ message: string }> {
   return apiClient.post('/reject-book', { pending_book_id: pendingBookId, rejection_reason: rejectionReason });
+}
+
+export async function approveUser(email: string): Promise<{ message: string }> {
+  return apiClient.post('/approve-user', { email });
+}
+
+export async function addAdmin(admin: { name: string; email: string; password: string }): Promise<{ message: string; admin_id: string }> {
+  return apiClient.post('/add-admin', admin);
+}
+
+export async function bootstrapAdmin(admin: { name: string; email: string; password: string }): Promise<{ message: string; admin_id: string }> {
+  return apiClient.post('/bootstrap-admin', admin);
+}
+
+export async function searchUsersAdmin(filters: { name?: string; insa_batch?: string; dorm_number?: string } = {}): Promise<{ count: number; users: any[] }> {
+  const params: any = {};
+  if (filters.name) params.name = filters.name;
+  if (filters.insa_batch) params.insa_batch = filters.insa_batch;
+  if (filters.dorm_number) params.dorm_number = filters.dorm_number;
+  return apiClient.get('/search-users', { params });
 }
